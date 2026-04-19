@@ -1,3 +1,5 @@
+#행정동 기준
+
 from pathlib import Path
 import nbformat as nbf
 
