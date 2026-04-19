@@ -1,3 +1,4 @@
+# 추천 로직 수정
 from __future__ import annotations
 
 from dataclasses import dataclass
