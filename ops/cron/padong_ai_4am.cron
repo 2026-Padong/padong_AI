@@ -1,0 +1,5 @@
+SHELL=/bin/zsh
+PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin
+
+# Run recommendation retraining every day at 4:00 AM
+0 4 * * * cd /Users/yerin/Documents/project/padong_AI && ./.venv/bin/python scripts/recommendation/run_nightly_training.py >> /Users/yerin/Documents/project/padong_AI/artifacts/dongne/nightly_training.log 2>&1
