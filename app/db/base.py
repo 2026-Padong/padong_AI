@@ -1,4 +1,5 @@
-class Base:
-    """Placeholder base class for future ORM models."""
+from sqlalchemy.orm import DeclarativeBase
 
-    pass
+
+class Base(DeclarativeBase):
+    """Base class for SQLAlchemy ORM models."""
