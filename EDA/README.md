@@ -1,5 +1,11 @@
 # Seoul Neighborhood Recommender
 
+실행 스크립트와 데이터 전처리 코드는 `scripts/`로 이동했고, 이 디렉터리에는 EDA 노트북과 분석 중심 문서만 남깁니다.
+
+- 추천/학습 스크립트: `scripts/recommendation/`
+- 데이터 전처리 스크립트: `scripts/data_prep/`
+- 원천/가공 CSV: `data/dongne/raw`, `data/dongne/processed`
+
 서울의 `구`와 `행정동`을 사용자 설문 응답 기반으로 추천하는 Python 추천 로직입니다.
 
 이 프로젝트는 아래 3개의 CSV를 결합해 만든 행정동 단위 특성 데이터를 바탕으로 동작합니다.

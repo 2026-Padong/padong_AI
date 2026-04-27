@@ -1,7 +1,14 @@
 # feature 수정
 from pathlib import Path
+import sys
 import pandas as pd
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
 
 
 def to_numeric_series(series):
@@ -11,7 +18,7 @@ def to_numeric_series(series):
     )
 
 
-base = Path.cwd()
+base = DONGNE_RAW_DATA_DIR
 csv_paths = sorted(base.glob("*.csv"), key=lambda p: p.stat().st_size)
 pop_path, interest_path, telecom_path = csv_paths[0], csv_paths[1], csv_paths[2]
 

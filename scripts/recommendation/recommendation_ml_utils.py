@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from typing import Dict, Iterable, List, Mapping, Sequence
 
-import resident_recommender as rr
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.recommendation import resident_recommender as rr
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-ARTIFACT_DIR = SCRIPT_DIR / "artifacts"
+ARTIFACT_DIR = PROJECT_ROOT / "artifacts" / "dongne"
 QUESTION_ID_TO_QKEY = {question.question_id: f"q{index}" for index, question in enumerate(rr.QUESTIONS, start=1)}
 QKEY_TO_QUESTION_ID = {value: key for key, value in QUESTION_ID_TO_QKEY.items()}
 IDENTIFIER_COLUMNS = {
@@ -134,4 +139,3 @@ def feature_columns(rows: Sequence[Mapping[str, object]], exclude: Iterable[str]
         if isinstance(value, (int, float)):
             columns.append(key)
     return columns
-

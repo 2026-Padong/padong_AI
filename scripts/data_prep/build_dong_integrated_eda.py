@@ -2,6 +2,15 @@
 
 from pathlib import Path
 import nbformat as nbf
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+
+NOTEBOOK_OUTPUT_PATH = PROJECT_ROOT / "EDA" / "2025_12_3csv_dong_integrated_eda.ipynb"
 
 
 def md(text: str):
@@ -50,7 +59,7 @@ rcParams["axes.unicode_minus"] = False
 """
     ),
     code(
-        """base_path = Path.cwd()
+        """base_path = Path(r'""" + str(DONGNE_RAW_DATA_DIR) + """')
 csv_paths = sorted(base_path.glob("*.csv"), key=lambda p: p.stat().st_size)
 
 pop_path = csv_paths[0]
@@ -570,6 +579,6 @@ nb["metadata"] = {
     },
 }
 
-output_path = Path.cwd() / "2025_12_3csv_dong_integrated_eda.ipynb"
+output_path = NOTEBOOK_OUTPUT_PATH
 nbf.write(nb, output_path)
 print(output_path)

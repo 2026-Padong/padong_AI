@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import argparse
-import csv
 from pathlib import Path
+import sys
 from typing import Dict, List
 
-import recommendation_ml_utils as ml_utils
-import resident_recommender as rr
+import pandas as pd
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.core.config import settings
+from app.db.session import get_engine
+from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from scripts.recommendation import recommendation_ml_utils as ml_utils
+from scripts.recommendation import resident_recommender as rr
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT_CSV = SCRIPT_DIR / "pair_training_dataset.csv"
+DEFAULT_OUTPUT_CSV = DONGNE_PROCESSED_DATA_DIR / "pair_training_dataset.csv"
+RECOMMENDATION_LOG_TABLE = "user_recommendation_logs"
 
 
 def parse_float(value: str | None, default: float = 0.0) -> float:
@@ -22,12 +31,9 @@ def parse_float(value: str | None, default: float = 0.0) -> float:
     return float(text)
 
 
-def read_rows(path: Path) -> List[Dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
-
-
 def write_rows(path: Path, rows: List[Dict[str, object]]) -> None:
+    import csv
+
     fieldnames: List[str] = []
     seen = set()
     for row in rows:
@@ -43,21 +49,29 @@ def write_rows(path: Path, rows: List[Dict[str, object]]) -> None:
             writer.writerow(row)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Build user-admin_dong pair dataset from behavior logs.")
-    parser.add_argument("--logs-csv", required=True, help="Behavior log csv path.")
-    parser.add_argument("--output-csv", default=str(DEFAULT_OUTPUT_CSV), help="Output pair dataset csv path.")
-    parser.add_argument("--dwell-cap-sec", type=float, default=120.0, help="Cap for dwell-time normalization.")
-    args = parser.parse_args()
+def read_log_rows_from_database() -> List[Dict[str, object]]:
+    query = f"""
+    SELECT
+        user_id,
+        session_id,
+        event_at,
+        admin_dong_code,
+        rank_position,
+        impression,
+        clicked,
+        liked,
+        dwell_time_sec,
+        q1, q2, q3, q4, q5, q6, q7, q8, q9, q10
+    FROM {RECOMMENDATION_LOG_TABLE}
+    ORDER BY event_at, session_id, rank_position
+    """
+    frame = pd.read_sql_query(query, con=get_engine(settings.DATABASE_URL))
+    return frame.fillna("").to_dict(orient="records")
 
-    logs_csv = Path(args.logs_csv)
-    output_csv = Path(args.output_csv)
-    if not logs_csv.is_absolute():
-        logs_csv = SCRIPT_DIR / logs_csv
-    if not output_csv.is_absolute():
-        output_csv = SCRIPT_DIR / output_csv
+
+def build_pair_rows(dwell_cap_sec: float = 120.0) -> tuple[List[Dict[str, object]], Dict[str, int]]:
     profile_lookup = ml_utils.load_profile_lookup()
-    log_rows = read_rows(logs_csv)
+    log_rows = read_log_rows_from_database()
 
     output_rows: List[Dict[str, object]] = []
     missing_codes: Dict[str, int] = {}
@@ -93,10 +107,30 @@ def main() -> None:
             "clicked": clicked,
             "liked": liked,
             "dwell_time_sec": dwell_time_sec,
-            "label": ml_utils.compute_label(clicked, liked, dwell_time_sec, dwell_cap_sec=args.dwell_cap_sec),
+            "label": ml_utils.compute_label(clicked, liked, dwell_time_sec, dwell_cap_sec=dwell_cap_sec),
         }
         pair_row.update(feature_row)
         output_rows.append(pair_row)
+
+    return output_rows, missing_codes
+
+
+def build_pair_dataset_frame(dwell_cap_sec: float = 120.0) -> pd.DataFrame:
+    rows, _ = build_pair_rows(dwell_cap_sec=dwell_cap_sec)
+    return pd.DataFrame(rows)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build user-admin_dong pair dataset from database behavior logs.")
+    parser.add_argument("--output-csv", default=str(DEFAULT_OUTPUT_CSV), help="Output pair dataset csv path.")
+    parser.add_argument("--dwell-cap-sec", type=float, default=120.0, help="Cap for dwell-time normalization.")
+    args = parser.parse_args()
+
+    output_csv = Path(args.output_csv)
+    if not output_csv.is_absolute():
+        output_csv = PROJECT_ROOT / output_csv
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    output_rows, missing_codes = build_pair_rows(dwell_cap_sec=args.dwell_cap_sec)
 
     write_rows(output_csv, output_rows)
     print(f"pair_dataset={output_csv.name}")

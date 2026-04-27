@@ -5,10 +5,18 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+import sys
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent if SCRIPT_DIR.name == "recommendation_stage1" else SCRIPT_DIR
+DATA_DIR = DONGNE_RAW_DATA_DIR
+OUTPUT_DIR = DONGNE_PROCESSED_DATA_DIR
 FULLWIDTH_SPACE = "\u3000"
 
 MARKERS = {
@@ -469,6 +477,7 @@ def build_integrated_output(
 
 
 def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     admin_rows = load_admin_master()
     admin_lookup = build_admin_lookup(admin_rows)
 
@@ -500,7 +509,7 @@ def main() -> None:
     for source_name, rows in datasets:
         fieldnames = list(rows[0].keys())
         out_name = f"new_{source_name}"
-        write_csv(SCRIPT_DIR / out_name, stringify_rows(rows, fieldnames), fieldnames)
+        write_csv(OUTPUT_DIR / out_name, stringify_rows(rows, fieldnames), fieldnames)
         print(f"{out_name}\trows={len(rows)}")
 
 

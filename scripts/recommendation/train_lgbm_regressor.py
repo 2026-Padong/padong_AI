@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 import joblib
 import pandas as pd
@@ -10,12 +11,19 @@ from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
-import recommendation_ml_utils as ml_utils
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
+from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from scripts.recommendation import build_pair_dataset
+from scripts.recommendation import recommendation_ml_utils as ml_utils
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_CSV = SCRIPT_DIR / "pair_training_dataset.csv"
-DEFAULT_ARTIFACT_DIR = SCRIPT_DIR / "artifacts"
+DEFAULT_DATASET_CSV = DONGNE_PROCESSED_DATA_DIR / "pair_training_dataset.csv"
+DEFAULT_ARTIFACT_DIR = DONGNE_ARTIFACT_DIR
 
 NON_FEATURE_COLUMNS = {
     "user_id",
@@ -38,19 +46,33 @@ NON_FEATURE_COLUMNS = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train first-pass LightGBM regressor for admin-dong preference.")
-    parser.add_argument("--dataset-csv", default=str(DEFAULT_DATASET_CSV), help="Pair dataset csv path.")
+    parser.add_argument("--dataset-csv", help="Optional pair dataset csv path. If omitted, build from DB logs directly.")
+    parser.add_argument("--export-dataset-csv", default=str(DEFAULT_DATASET_CSV), help="Optional snapshot csv path to export the DB-built dataset before training.")
+    parser.add_argument("--dwell-cap-sec", type=float, default=120.0, help="Cap for dwell-time normalization when building dataset from DB.")
     parser.add_argument("--artifact-dir", default=str(DEFAULT_ARTIFACT_DIR), help="Output artifact directory.")
     args = parser.parse_args()
 
-    dataset_csv = Path(args.dataset_csv)
+    dataset_csv = Path(args.dataset_csv) if args.dataset_csv else None
+    export_dataset_csv = Path(args.export_dataset_csv) if args.export_dataset_csv else None
     artifact_dir = Path(args.artifact_dir)
-    if not dataset_csv.is_absolute():
-        dataset_csv = SCRIPT_DIR / dataset_csv
+    if dataset_csv is not None and not dataset_csv.is_absolute():
+        dataset_csv = PROJECT_ROOT / dataset_csv
+    if export_dataset_csv is not None and not export_dataset_csv.is_absolute():
+        export_dataset_csv = PROJECT_ROOT / export_dataset_csv
     if not artifact_dir.is_absolute():
-        artifact_dir = SCRIPT_DIR / artifact_dir
+        artifact_dir = PROJECT_ROOT / artifact_dir
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    frame = pd.read_csv(dataset_csv, encoding="utf-8-sig")
+    if dataset_csv is not None:
+        frame = pd.read_csv(dataset_csv, encoding="utf-8-sig")
+        dataset_source = str(dataset_csv)
+    else:
+        frame = build_pair_dataset.build_pair_dataset_frame(dwell_cap_sec=args.dwell_cap_sec)
+        dataset_source = "database:user_recommendation_logs"
+        if export_dataset_csv is not None:
+            export_dataset_csv.parent.mkdir(parents=True, exist_ok=True)
+            frame.to_csv(export_dataset_csv, index=False, encoding="utf-8-sig")
+
     if frame.empty:
         raise ValueError("Pair dataset is empty.")
 
@@ -103,7 +125,7 @@ def main() -> None:
     meta_path.write_text(
         json.dumps(
             {
-                "dataset_csv": str(dataset_csv),
+                "dataset_source": dataset_source,
                 "feature_columns": feature_columns,
                 "metrics": metrics,
             },

@@ -5,9 +5,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
+import sys
 
 import numpy as np
 import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
 
 
 QUESTION_TEXT = {
@@ -384,7 +391,7 @@ def build_dong_description(user_vector: Mapping[str, float], row: pd.Series) -> 
 
 def recommend_seoul_neighborhoods(
     responses: Mapping[str, float],
-    base_dir: str | Path = ".",
+    base_dir: str | Path = DONGNE_RAW_DATA_DIR,
     config: RecommenderConfig | None = None,
 ) -> Dict[str, Any]:
     config = config or RecommenderConfig()
@@ -466,7 +473,7 @@ if __name__ == "__main__":
         "q9": 5,
         "q10": 4,
     }
-    result = recommend_seoul_neighborhoods(sample_responses, base_dir=Path(__file__).resolve().parent)
+    result = recommend_seoul_neighborhoods(sample_responses, base_dir=DONGNE_RAW_DATA_DIR)
     print(result["summary"])
     print("\n[구 추천]")
     for item in result["gu_recommendations"]:

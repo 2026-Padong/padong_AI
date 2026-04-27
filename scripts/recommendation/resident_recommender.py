@@ -7,14 +7,22 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
+from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_SOURCE_CSV = SCRIPT_DIR / "new_integrated_admin_dong_data.csv"
-LEGACY_SOURCE_CSV = SCRIPT_DIR / "integrated_admin_dong_data.csv"
+DEFAULT_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "new_integrated_admin_dong_data.csv"
+LEGACY_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "integrated_admin_dong_data.csv"
 SOURCE_CSV = DEFAULT_SOURCE_CSV if DEFAULT_SOURCE_CSV.exists() else LEGACY_SOURCE_CSV
-PROFILE_CSV = SCRIPT_DIR / "admin_dong_lifestyle_profiles.csv"
-SAMPLE_RESULT_JSON = SCRIPT_DIR / "sample_recommendations.json"
+PROFILE_CSV = DONGNE_PROCESSED_DATA_DIR / "admin_dong_lifestyle_profiles.csv"
+SAMPLE_RESULT_JSON = DONGNE_ARTIFACT_DIR / "sample_recommendations.json"
 
 
 TYPE_LABELS = {

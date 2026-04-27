@@ -3,17 +3,23 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 import joblib
 import pandas as pd
 
-import recommendation_ml_utils as ml_utils
-import resident_recommender as rr
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
+from scripts.recommendation import recommendation_ml_utils as ml_utils
+from scripts.recommendation import resident_recommender as rr
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_PATH = SCRIPT_DIR / "artifacts" / "lgbm_regressor.joblib"
-DEFAULT_META_PATH = SCRIPT_DIR / "artifacts" / "lgbm_regressor_meta.json"
+DEFAULT_MODEL_PATH = DONGNE_ARTIFACT_DIR / "lgbm_regressor.joblib"
+DEFAULT_META_PATH = DONGNE_ARTIFACT_DIR / "lgbm_regressor_meta.json"
 
 
 def rank_candidates_rule_based(candidates: list[dict[str, object]]) -> list[dict[str, object]]:

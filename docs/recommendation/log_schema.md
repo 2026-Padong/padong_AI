@@ -43,6 +43,7 @@ label = 0.2 * clicked + 0.6 * liked + 0.2 * min(dwell_time_sec / 120, 1.0)
 ## 처리 순서
 
 1. 백엔드가 추천 결과 `admin_dong_code` 20개를 프론트에 전달
-2. 프론트/백엔드가 행정동별 반응 로그 저장
-3. [build_pair_dataset.py](build_pair_dataset.py)로 pair dataset 생성
-4. [train_lgbm_regressor.py](train_lgbm_regressor.py)로 LightGBM Regressor 학습
+2. 프론트/백엔드가 행정동별 반응 로그를 `POST /api/v1/dongne/interactions`로 batch 저장
+3. 매일 새벽 4시에 [build_pair_dataset.py](../../scripts/recommendation/build_pair_dataset.py)로 DB 로그를 pair dataset으로 생성
+4. 이어서 [train_lgbm_regressor.py](../../scripts/recommendation/train_lgbm_regressor.py) 또는 [run_nightly_training.py](../../scripts/recommendation/run_nightly_training.py)로 학습
+5. 운영 등록 방식은 [nightly_training.md](./nightly_training.md)와 [padong_ai_4am.cron](../../ops/cron/padong_ai_4am.cron) 참고
