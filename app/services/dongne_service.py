@@ -8,9 +8,20 @@ from typing import Mapping
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
+from app.core.config import settings
+from app.db.session import get_engine
+from app.schemas.dongne import DongneInteractionBatchRequest
+from app.schemas.dongne import DongneInteractionBatchResponse
 from app.schemas.dongne import DongRecommendationResponse
 from app.schemas.dongne import DongneRecommendationRequest
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.common import utc_now
+from scripts.recommendation import recommendation_ml_utils as ml_utils
+from scripts.recommendation import resident_recommender as rr
 
 
 QUESTION_TEXT = {
@@ -27,14 +38,219 @@ QUESTION_TEXT = {
 }
 
 QUESTION_ORDER = list(QUESTION_TEXT.keys())
-DEFAULT_EDA_DIR = Path(__file__).resolve().parents[2] / "EDA"
+DEFAULT_DATA_DIR = DONGNE_RAW_DATA_DIR
+DONG_PROFILE_TABLE = "dong_region_profiles"
+RECOMMENDATION_LOG_TABLE = "user_recommendation_logs"
 
 
 @dataclass(frozen=True)
 class RecommenderConfig:
-    top_gu: int = 3
-    top_dong_per_gu: int = 3
+    top_dong: int = 10
     min_population: int = 1000
+
+
+def _get_engine() -> Engine:
+    return get_engine(settings.DATABASE_URL)
+
+
+def _table_has_rows(engine: Engine, table_name: str) -> bool:
+    inspector = inspect(engine)
+    if not inspector.has_table(table_name):
+        return False
+
+    with engine.begin() as connection:
+        row_count = connection.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one()
+    return row_count > 0
+
+
+def _normalize_loaded_profiles(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized = frame.copy()
+    integer_columns = {"행정동코드", "총인구"}
+    for column in normalized.columns:
+        if column in integer_columns:
+            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").astype("Int64")
+        elif normalized[column].dtype == object:
+            numeric_series = pd.to_numeric(normalized[column], errors="coerce")
+            if numeric_series.notna().all():
+                normalized[column] = numeric_series
+    return normalized
+
+
+def _store_region_profiles(engine: Engine, profiles: dict[str, pd.DataFrame]) -> None:
+    profiles["dong"].to_sql(DONG_PROFILE_TABLE, con=engine, if_exists="replace", index=False)
+
+
+def _ensure_recommendation_log_table(engine: Engine) -> None:
+    if inspect(engine).has_table(RECOMMENDATION_LOG_TABLE):
+        return
+
+    empty_frame = pd.DataFrame(
+        columns=[
+            "user_id",
+            "session_id",
+            "event_at",
+            "admin_dong_code",
+            "rank_position",
+            "impression",
+            "clicked",
+            "liked",
+            "dwell_time_sec",
+            "q1",
+            "q2",
+            "q3",
+            "q4",
+            "q5",
+            "q6",
+            "q7",
+            "q8",
+            "q9",
+            "q10",
+            "created_at",
+        ]
+    )
+    empty_frame.to_sql(RECOMMENDATION_LOG_TABLE, con=engine, if_exists="append", index=False)
+
+
+def _load_profiles_from_database(engine: Engine) -> dict[str, pd.DataFrame]:
+    dong = pd.read_sql_table(DONG_PROFILE_TABLE, con=engine)
+    return {"dong": _normalize_loaded_profiles(dong)}
+
+
+def _save_recommendation_logs(payload: DongneRecommendationRequest, recommendation_pks: list[int]) -> None:
+    engine = _get_engine()
+    _ensure_recommendation_log_table(engine)
+    event_at = payload.event_at or utc_now()
+    created_at = utc_now()
+    rows = [
+        {
+            "user_id": payload.user_id,
+            "session_id": payload.session_id,
+            "event_at": event_at.isoformat(),
+            "admin_dong_code": admin_dong_code,
+            "rank_position": rank_position,
+            "impression": 1,
+            "clicked": 0,
+            "liked": 0,
+            "dwell_time_sec": 0.0,
+            "q1": payload.q1,
+            "q2": payload.q2,
+            "q3": payload.q3,
+            "q4": payload.q4,
+            "q5": payload.q5,
+            "q6": payload.q6,
+            "q7": payload.q7,
+            "q8": payload.q8,
+            "q9": payload.q9,
+            "q10": payload.q10,
+            "created_at": created_at.isoformat(),
+        }
+        for rank_position, admin_dong_code in enumerate(recommendation_pks, start=1)
+    ]
+
+    if rows:
+        pd.DataFrame(rows).to_sql(RECOMMENDATION_LOG_TABLE, con=engine, if_exists="append", index=False)
+
+
+def save_interactions(payload: DongneInteractionBatchRequest) -> DongneInteractionBatchResponse:
+    engine = _get_engine()
+    _ensure_recommendation_log_table(engine)
+    updated_count = 0
+
+    with engine.begin() as connection:
+        for item in payload.interactions:
+            row = connection.execute(
+                text(
+                    f"""
+                    SELECT 1
+                    FROM {RECOMMENDATION_LOG_TABLE}
+                    WHERE user_id = :user_id
+                      AND session_id = :session_id
+                      AND admin_dong_code = :admin_dong_code
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "user_id": item.user_id,
+                    "session_id": item.session_id,
+                    "admin_dong_code": item.admin_dong_code,
+                },
+            ).fetchone()
+
+            if row is None:
+                connection.execute(
+                    text(
+                        f"""
+                        INSERT INTO {RECOMMENDATION_LOG_TABLE} (
+                            user_id,
+                            session_id,
+                            event_at,
+                            admin_dong_code,
+                            rank_position,
+                            impression,
+                            clicked,
+                            liked,
+                            dwell_time_sec,
+                            q1, q2, q3, q4, q5, q6, q7, q8, q9, q10,
+                            created_at
+                        ) VALUES (
+                            :user_id,
+                            :session_id,
+                            :event_at,
+                            :admin_dong_code,
+                            :rank_position,
+                            :impression,
+                            :clicked,
+                            :liked,
+                            :dwell_time_sec,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            :created_at
+                        )
+                        """
+                    ),
+                    {
+                        "user_id": item.user_id,
+                        "session_id": item.session_id,
+                        "event_at": (item.event_at or utc_now()).isoformat(),
+                        "admin_dong_code": item.admin_dong_code,
+                        "rank_position": item.rank_position or 1,
+                        "impression": item.impression,
+                        "clicked": item.clicked,
+                        "liked": item.liked,
+                        "dwell_time_sec": item.dwell_time_sec,
+                        "created_at": utc_now().isoformat(),
+                    },
+                )
+            else:
+                connection.execute(
+                    text(
+                        f"""
+                        UPDATE {RECOMMENDATION_LOG_TABLE}
+                        SET clicked = :clicked,
+                            liked = :liked,
+                            dwell_time_sec = :dwell_time_sec,
+                            impression = :impression,
+                            rank_position = COALESCE(:rank_position, rank_position),
+                            event_at = COALESCE(:event_at, event_at)
+                        WHERE user_id = :user_id
+                          AND session_id = :session_id
+                          AND admin_dong_code = :admin_dong_code
+                        """
+                    ),
+                    {
+                        "clicked": item.clicked,
+                        "liked": item.liked,
+                        "dwell_time_sec": item.dwell_time_sec,
+                        "impression": item.impression,
+                        "rank_position": item.rank_position,
+                        "event_at": item.event_at.isoformat() if item.event_at else None,
+                        "user_id": item.user_id,
+                        "session_id": item.session_id,
+                        "admin_dong_code": item.admin_dong_code,
+                    },
+                )
+            updated_count += 1
+
+    return DongneInteractionBatchResponse(updated_count=updated_count)
 
 
 def _to_numeric_series(series: pd.Series) -> pd.Series:
@@ -64,6 +280,13 @@ def validate_responses(responses: Mapping[str, float]) -> dict[str, float]:
     return {key: _normalize_response(float(responses[key])) for key in QUESTION_ORDER}
 
 
+def _build_type_answers(responses: Mapping[str, float]) -> dict[str, float]:
+    return {
+        ml_utils.QKEY_TO_QUESTION_ID[qkey]: float(responses[qkey])
+        for qkey in QUESTION_ORDER
+    }
+
+
 def build_user_vector(responses: Mapping[str, float]) -> dict[str, float | dict[str, float]]:
     normalized = validate_responses(responses)
     q1 = normalized["q1"]
@@ -90,8 +313,7 @@ def build_user_vector(responses: Mapping[str, float]) -> dict[str, float | dict[
     }
 
 
-@lru_cache(maxsize=2)
-def load_region_profiles(base_dir: str) -> dict[str, pd.DataFrame]:
+def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
     base = Path(base_dir)
     csv_paths = sorted(base.glob("*.csv"), key=lambda path: path.stat().st_size)
     if len(csv_paths) < 3:
@@ -104,7 +326,22 @@ def load_region_profiles(base_dir: str) -> dict[str, pd.DataFrame]:
 
     interest = interest.loc[:, [col for col in interest.columns if str(col).strip() and not str(col).startswith("Unnamed:")]].copy()
     telecom = telecom.loc[:, [col for col in telecom.columns if str(col).strip() and not str(col).startswith("Unnamed:")]].copy()
+    interest = interest.rename(
+        columns={
+            "admin_dong_code": "행정동코드",
+            "district_name": "자치구",
+            "admin_dong_name": "행정동명",
+            "total_population": "총인구",
+        }
+    )
     telecom = telecom.rename(columns={"행정동": "행정동명", "총인구수": "총인구_통신정보", "1인가구수": "1인가구수_통신정보"})
+    telecom = telecom.rename(
+        columns={
+            "admin_dong_code": "행정동코드",
+            "district_name": "자치구",
+            "admin_dong_name": "행정동명",
+        }
+    )
 
     interest_id_cols = ["행정동코드", "자치구", "행정동명", "성별", "연령대"]
     telecom_id_cols = ["행정동코드", "자치구", "행정동명", "성별", "연령대"]
@@ -117,11 +354,21 @@ def load_region_profiles(base_dir: str) -> dict[str, pd.DataFrame]:
         if col not in telecom_id_cols:
             telecom[col] = _to_numeric_series(telecom[col])
 
-    merged = interest.merge(
-        telecom.drop(columns=["자치구"]),
-        on=["행정동코드", "행정동명", "성별", "연령대"],
-        how="left",
-    )
+    aggregated_input = not {"성별", "연령대"}.issubset(interest.columns) and not {"성별", "연령대"}.issubset(telecom.columns)
+    if aggregated_input:
+        merge_keys = [key for key in ["행정동코드", "자치구", "행정동명"] if key in interest.columns and key in telecom.columns]
+        telecom_drop_cols = [col for col in [] if col in telecom.columns]
+        merged = interest.merge(
+            telecom.drop(columns=telecom_drop_cols),
+            on=merge_keys,
+            how="left",
+        )
+    else:
+        merged = interest.merge(
+            telecom.drop(columns=["자치구"]),
+            on=["행정동코드", "행정동명", "성별", "연령대"],
+            how="left",
+        )
 
     interest_count_cols = [
         "1인가구수",
@@ -152,25 +399,31 @@ def load_region_profiles(base_dir: str) -> dict[str, pd.DataFrame]:
     ]
     telecom_feature_cols = [col for col in telecom_feature_cols if col in merged.columns]
 
-    dong_rows: list[dict[str, Any]] = []
-    for keys, group in merged.groupby(["행정동코드", "자치구", "행정동명"], dropna=False):
-        row: dict[str, Any] = {"행정동코드": keys[0], "자치구": keys[1], "행정동명": keys[2], "총인구": group["총인구"].sum()}
-
+    if aggregated_input:
+        dong = merged.copy()
         for col in interest_count_cols:
-            row[col] = group[col].sum()
-            row[f"{col}비율"] = row[col] / row["총인구"] if row["총인구"] else np.nan
+            if col in dong.columns:
+                dong[f"{col}비율"] = dong[col] / dong["총인구"] if "총인구" in dong.columns else np.nan
+    else:
+        dong_rows: list[dict[str, Any]] = []
+        for keys, group in merged.groupby(["행정동코드", "자치구", "행정동명"], dropna=False):
+            row: dict[str, Any] = {"행정동코드": keys[0], "자치구": keys[1], "행정동명": keys[2], "총인구": group["총인구"].sum()}
 
-        weights = group["총인구"].fillna(0)
-        for col in telecom_feature_cols:
-            valid_mask = group[col].notna() & weights.notna()
-            if valid_mask.any() and weights[valid_mask].sum() > 0:
-                row[col] = float(np.average(group.loc[valid_mask, col], weights=weights[valid_mask]))
-            else:
-                row[col] = np.nan
+            for col in interest_count_cols:
+                row[col] = group[col].sum()
+                row[f"{col}비율"] = row[col] / row["총인구"] if row["총인구"] else np.nan
 
-        dong_rows.append(row)
+            weights = group["총인구"].fillna(0)
+            for col in telecom_feature_cols:
+                valid_mask = group[col].notna() & weights.notna()
+                if valid_mask.any() and weights[valid_mask].sum() > 0:
+                    row[col] = float(np.average(group.loc[valid_mask, col], weights=weights[valid_mask]))
+                else:
+                    row[col] = np.nan
 
-    dong = pd.DataFrame(dong_rows)
+            dong_rows.append(row)
+
+        dong = pd.DataFrame(dong_rows)
 
     core_cols = [
         "1인가구수비율",
@@ -248,56 +501,17 @@ def load_region_profiles(base_dir: str) -> dict[str, pd.DataFrame]:
     }
     dong["대표유형"] = dong[type_cols].idxmax(axis=1).map(type_name_map)
 
-    gu_sum_cols = ["총인구"] + interest_count_cols
-    gu = dong.groupby("자치구", as_index=False)[gu_sum_cols].sum()
-    for col in interest_count_cols:
-        gu[f"{col}비율"] = gu[col] / gu["총인구"]
+    return {"dong": dong}
 
-    for col in telecom_feature_cols:
-        weighted = (
-            dong.assign(_weighted=dong[col] * dong["총인구"])
-            .groupby("자치구", as_index=False)[["_weighted", "총인구"]]
-            .sum()
-        )
-        gu = gu.merge(weighted.rename(columns={"_weighted": f"{col}_weighted", "총인구": "총인구_tmp"}), on="자치구", how="left")
-        gu[col] = gu[f"{col}_weighted"] / gu["총인구_tmp"]
-        gu = gu.drop(columns=[f"{col}_weighted", "총인구_tmp"])
 
-    for col in core_cols:
-        if col in gu.columns:
-            gu[f"{col}_z"] = _zscore(gu[col])
-
-    gu["single_household_profile"] = 0.7 * gu["1인가구수비율_z"] + 0.3 * gu["재정상태에 대한 관심집단비율_z"]
-    gu["settled_profile"] = (
-        0.35 * gu["외출이 매우 적은 집단(전체)비율_z"]
-        + 0.35 * gu["집 추정 위치 휴일 총 체류시간_z"]
-        - 0.15 * gu["평일 총 이동 횟수_z"]
-        - 0.15 * gu["휴일 총 이동 횟수 평균_z"]
-    )
-    gu["social_profile"] = (
-        0.4 * gu["평균 통화대상자 수_z"]
-        + 0.4 * gu["평균 문자대상자 수_z"]
-        - 0.2 * gu["커뮤니케이션이 적은 집단비율_z"]
-    )
-    gu["service_profile"] = (
-        0.4 * gu["배달 서비스 사용일수_z"]
-        + 0.3 * gu["쇼핑 서비스 사용일수_z"]
-        + 0.3 * gu["동영상/방송 서비스 사용일수_z"]
-    )
-    gu["cost_risk_profile"] = 0.5 * gu["재정상태에 대한 관심집단비율_z"] + 0.5 * gu["최근 3개월 내 요금 연체 비율_z"]
-    gu["isolation_risk_profile"] = (
-        0.4 * gu["커뮤니케이션이 적은 집단비율_z"]
-        + 0.4 * gu["외출-커뮤니케이션이 모두 적은 집단(전체)비율_z"]
-        + 0.2 * gu["외출이 매우 적은 집단(전체)비율_z"]
-    )
-    gu["youth_mobile_profile"] = (
-        0.4 * gu["1인가구수비율_z"] + 0.3 * gu["평일 총 이동 횟수_z"] + 0.3 * gu["쇼핑 서비스 사용일수_z"]
-    )
-    gu["residential_stability_profile"] = (
-        0.5 * gu["settled_profile"] - 0.3 * gu["youth_mobile_profile"] - 0.2 * gu["service_profile"]
-    )
-
-    return {"dong": dong, "gu": gu}
+@lru_cache(maxsize=8)
+def load_region_profiles(base_dir: str, database_url: str) -> dict[str, pd.DataFrame]:
+    engine = get_engine(database_url)
+    if not _table_has_rows(engine, DONG_PROFILE_TABLE):
+        profiles = _build_region_profiles_from_csv(base_dir)
+        _store_region_profiles(engine, profiles)
+        return profiles
+    return _load_profiles_from_database(engine)
 
 
 def _match_score(user_vector: Mapping[str, float | dict[str, float]], row: pd.Series) -> float:
@@ -356,58 +570,31 @@ def _user_summary(user_vector: Mapping[str, float | dict[str, float]]) -> str:
     return summary
 
 
-def build_dong_description(user_vector: Mapping[str, float | dict[str, float]], row: pd.Series) -> str:
-    traits = " ".join(_pick_traits(row))
-    caution = _pick_cautions(row)
-    user_pref = _user_summary(user_vector)
-    return (
-        f"{row['자치구']} {row['행정동명']}은 {row['대표유형']} 성격이 강한 동네입니다. "
-        f"이곳은 {traits.rstrip('고')} 특징이 함께 나타나 {user_pref} 사용자에게 특히 잘 맞을 수 있습니다. "
-        f"응답 기준으로는 이동성, 생활서비스, 사회적 연결감 축에서 높은 적합도를 보였습니다. "
-        f"다만 {caution}"
-    )
-
-
 def recommend_dongs(
     payload: DongneRecommendationRequest,
     *,
-    base_dir: str | Path = DEFAULT_EDA_DIR,
+    base_dir: str | Path = DEFAULT_DATA_DIR,
     config: RecommenderConfig | None = None,
-) -> list[DongRecommendationResponse]:
+) -> DongRecommendationResponse:
     recommender_config = config or RecommenderConfig()
     responses = payload.model_dump()
     user_vector = build_user_vector(responses)
-    profiles = load_region_profiles(str(Path(base_dir).resolve()))
+    type_result = rr.classify_user_type(_build_type_answers(responses))
+    profiles = load_region_profiles(str(Path(base_dir).resolve()), settings.DATABASE_URL)
 
-    gu = profiles["gu"].copy()
     dong = profiles["dong"].copy()
     dong = dong[dong["총인구"] >= recommender_config.min_population].copy()
 
-    gu["match_score"] = gu.apply(lambda row: _match_score(user_vector, row), axis=1)
     dong["match_score"] = dong.apply(lambda row: _match_score(user_vector, row), axis=1)
 
-    top_gus = gu.sort_values("match_score", ascending=False).head(recommender_config.top_gu)
+    top_dongs = dong.sort_values("match_score", ascending=False).head(recommender_config.top_dong)
 
-    recommendations: list[DongRecommendationResponse] = []
-    for _, gu_row in top_gus.iterrows():
-        gu_dongs = (
-            dong[dong["자치구"] == gu_row["자치구"]]
-            .sort_values("match_score", ascending=False)
-            .head(recommender_config.top_dong_per_gu)
-        )
+    recommendation_pks: list[int] = []
+    for _, dong_row in top_dongs.iterrows():
+        recommendation_pks.append(int(dong_row["행정동코드"]))
 
-        for _, dong_row in gu_dongs.iterrows():
-            recommendations.append(
-                DongRecommendationResponse(
-                    gu=str(dong_row["자치구"]),
-                    dong=str(dong_row["행정동명"]),
-                    match_score=float(dong_row["match_score"]),
-                    population=int(dong_row["총인구"]),
-                    type=str(dong_row["대표유형"]),
-                    description=build_dong_description(user_vector, dong_row),
-                    top_traits=_pick_traits(dong_row),
-                    caution=_pick_cautions(dong_row),
-                )
-            )
-
-    return recommendations
+    _save_recommendation_logs(payload, recommendation_pks)
+    return DongRecommendationResponse(
+        user_type=str(type_result["type_label"]),
+        recommendations=recommendation_pks,
+    )

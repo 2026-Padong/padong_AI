@@ -1,47 +1,307 @@
+import sqlite3
+from pathlib import Path
+
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import settings
+from app.db.session import get_engine
 from app.schemas.dongne import DongRecommendationResponse
 from app.services import dongne_service
+from scripts.recommendation import build_pair_dataset
 
 
 client = TestClient(app)
 
 
-def test_get_dong_recommendations(monkeypatch) -> None:
-    expected = [
-        DongRecommendationResponse(
-            gu="마포구",
-            dong="서교동",
-            match_score=0.81,
-            population=12000,
-            type="1인가구집중형",
-            description="추천 설명",
-            top_traits=["1인가구 친화성이 높고"],
-            caution="전체적으로는 사용자 응답과 큰 충돌 없이 맞는 편입니다",
-        )
-    ]
+def test_get_dong_recommendations(monkeypatch, tmp_path: Path) -> None:
+    expected = DongRecommendationResponse(user_type="핫플 탐험가형", recommendations=[1144066000, 1144058500, 1168058000])
+    db_path = tmp_path / "test_recommendations.db"
 
     def fake_recommend_dongs(payload):
         assert payload.q1 == 5
         assert payload.q10 == 1
         return expected
 
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
     monkeypatch.setattr(dongne_service, "recommend_dongs", fake_recommend_dongs)
 
     response = client.get(
         "/api/v1/dongne/recommendations",
-        params={"q1": 5, "q2": 4, "q3": 3, "q4": 2, "q5": 1, "q6": 5, "q7": 4, "q8": 3, "q9": 2, "q10": 1},
+        params={
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "event_at": "2026-04-27T12:00:00+09:00",
+            "q1": 5,
+            "q2": 4,
+            "q3": 3,
+            "q4": 2,
+            "q5": 1,
+            "q6": 5,
+            "q7": 4,
+            "q8": 3,
+            "q9": 2,
+            "q10": 1,
+        },
     )
 
     assert response.status_code == 200
-    assert response.json() == [item.model_dump(mode="json") for item in expected]
+    assert response.json() == expected.model_dump(mode="json")
 
 
 def test_get_dong_recommendations_validates_query_params() -> None:
     response = client.get(
         "/api/v1/dongne/recommendations",
-        params={"q1": 0, "q2": 4, "q3": 3, "q4": 2, "q5": 1, "q6": 5, "q7": 4, "q8": 3, "q9": 2, "q10": 1},
+        params={
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "q1": 0,
+            "q2": 4,
+            "q3": 3,
+            "q4": 2,
+            "q5": 1,
+            "q6": 5,
+            "q7": 4,
+            "q8": 3,
+            "q9": 2,
+            "q10": 1,
+        },
     )
 
     assert response.status_code == 422
+
+
+def test_recommend_dongs_saves_logs_to_database(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "padong_ai.db"
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+    dongne_service.load_region_profiles.cache_clear()
+
+    dong_df = pd.DataFrame(
+        [
+            {"행정동코드": 1111111111, "자치구": "강남구", "행정동명": "역삼동", "총인구": 1200, "대표유형": "고립위험형", "single_household_profile": 0.5, "settled_profile": 0.1, "social_profile": 0.2, "service_profile": 0.3, "residential_stability_profile": 0.1, "youth_mobile_profile": 0.4, "cost_risk_profile": 0.0, "isolation_risk_profile": 0.0},
+            {"행정동코드": 2222222222, "자치구": "강남구", "행정동명": "삼성동", "총인구": 1400, "대표유형": "정주고착형", "single_household_profile": 0.4, "settled_profile": 0.2, "social_profile": 0.2, "service_profile": 0.1, "residential_stability_profile": 0.0, "youth_mobile_profile": 0.2, "cost_risk_profile": 0.0, "isolation_risk_profile": 0.0},
+            {"행정동코드": 3333333333, "자치구": "마포구", "행정동명": "서교동", "총인구": 1500, "대표유형": "1인가구집중형", "single_household_profile": 0.6, "settled_profile": 0.2, "social_profile": 0.3, "service_profile": 0.5, "residential_stability_profile": 0.0, "youth_mobile_profile": 0.5, "cost_risk_profile": 0.0, "isolation_risk_profile": 0.0},
+            {"행정동코드": 4444444444, "자치구": "송파구", "행정동명": "잠실동", "총인구": 1600, "대표유형": "재정부담형", "single_household_profile": 0.3, "settled_profile": 0.4, "social_profile": 0.2, "service_profile": 0.2, "residential_stability_profile": 0.2, "youth_mobile_profile": 0.1, "cost_risk_profile": 0.0, "isolation_risk_profile": 0.0},
+        ]
+    )
+    monkeypatch.setattr(
+        dongne_service,
+        "load_region_profiles",
+        lambda _base_dir, _database_url: {"dong": dong_df},
+    )
+
+    payload = dongne_service.DongneRecommendationRequest(
+        user_id="user-77",
+        session_id="session-88",
+        event_at="2026-04-27T12:00:00+09:00",
+        q1=5,
+        q2=4,
+        q3=3,
+        q4=2,
+        q5=1,
+        q6=5,
+        q7=4,
+        q8=3,
+        q9=2,
+        q10=1,
+    )
+
+    response = dongne_service.recommend_dongs(payload, config=dongne_service.RecommenderConfig(top_dong=3))
+
+    assert response.user_type
+    assert len(response.recommendations) == 3
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT user_id, session_id, admin_dong_code, rank_position, impression, clicked, liked, dwell_time_sec, q1, q10
+            FROM user_recommendation_logs
+            ORDER BY rank_position
+            """
+        ).fetchall()
+
+    assert len(rows) == 3
+    assert rows[0][:4] == ("user-77", "session-88", str(response.recommendations[0]), "1")
+    assert rows[0][4:] == ("1", "0", "0", "0.0", "5", "1")
+
+
+def test_load_region_profiles_bootstraps_once_and_then_reads_db(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "bootstrap.db"
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+    dongne_service.load_region_profiles.cache_clear()
+
+    dong_df = pd.DataFrame(
+        [
+            {"행정동코드": 1111111111, "자치구": "강남구", "행정동명": "역삼동", "총인구": 1200, "single_household_profile": 0.5},
+        ]
+    )
+    call_count = {"count": 0}
+
+    def fake_build(_base_dir: str) -> dict[str, pd.DataFrame]:
+        call_count["count"] += 1
+        return {"dong": dong_df}
+
+    monkeypatch.setattr(dongne_service, "_build_region_profiles_from_csv", fake_build)
+
+    first = dongne_service.load_region_profiles(str(tmp_path), settings.DATABASE_URL)
+    second = dongne_service.load_region_profiles(str(tmp_path), settings.DATABASE_URL)
+
+    assert call_count["count"] == 1
+    assert first["dong"].iloc[0]["행정동코드"] == 1111111111
+    assert second["dong"].iloc[0]["자치구"] == "강남구"
+
+
+def test_save_interactions_endpoint_updates_rows(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "interaction.db"
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+    dongne_service.load_region_profiles.cache_clear()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE user_recommendation_logs (
+                user_id TEXT,
+                session_id TEXT,
+                event_at TEXT,
+                admin_dong_code INTEGER,
+                rank_position INTEGER,
+                impression INTEGER,
+                clicked INTEGER,
+                liked INTEGER,
+                dwell_time_sec REAL,
+                q1 INTEGER,
+                q2 INTEGER,
+                q3 INTEGER,
+                q4 INTEGER,
+                q5 INTEGER,
+                q6 INTEGER,
+                q7 INTEGER,
+                q8 INTEGER,
+                q9 INTEGER,
+                q10 INTEGER,
+                created_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO user_recommendation_logs
+            (user_id, session_id, event_at, admin_dong_code, rank_position, impression, clicked, liked, dwell_time_sec, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, created_at)
+            VALUES ('user-1', 'session-1', '2026-04-27T00:00:00+09:00', 1111111111, 1, 1, 0, 0, 0, 5, 4, 3, 2, 1, 5, 4, 3, 2, 1, '2026-04-27T00:00:00+09:00')
+            """
+        )
+        connection.commit()
+
+    response = client.post(
+        "/api/v1/dongne/interactions",
+        json={
+            "interactions": [
+                {
+                    "user_id": "user-1",
+                    "session_id": "session-1",
+                    "admin_dong_code": 1111111111,
+                    "clicked": 1,
+                    "liked": 1,
+                    "dwell_time_sec": 42.5,
+                    "impression": 1,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"updated_count": 1}
+
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT clicked, liked, dwell_time_sec
+            FROM user_recommendation_logs
+            WHERE user_id = 'user-1' AND session_id = 'session-1' AND admin_dong_code = 1111111111
+            """
+        ).fetchone()
+
+    assert row == (1, 1, 42.5)
+
+
+def test_build_pair_dataset_reads_logs_from_database(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "dataset.db"
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+
+    engine = get_engine(settings.DATABASE_URL)
+    log_frame = pd.DataFrame(
+        [
+            {
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "event_at": "2026-04-27T00:00:00+09:00",
+                "admin_dong_code": "1111111111",
+                "rank_position": 1,
+                "impression": 1,
+                "clicked": 1,
+                "liked": 0,
+                "dwell_time_sec": 30.0,
+                "q1": 5,
+                "q2": 4,
+                "q3": 3,
+                "q4": 2,
+                "q5": 1,
+                "q6": 5,
+                "q7": 4,
+                "q8": 3,
+                "q9": 2,
+                "q10": 1,
+            }
+        ]
+    )
+    log_frame.to_sql("user_recommendation_logs", con=engine, if_exists="replace", index=False)
+
+    monkeypatch.setattr(
+        build_pair_dataset.ml_utils,
+        "load_profile_lookup",
+        lambda: {
+            "1111111111": {
+                "district_name": "강남구",
+                "admin_dong_name": "역삼동",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        build_pair_dataset.ml_utils,
+        "parse_answers_from_log_row",
+        lambda _row: {
+            "weekend_activity": 5.0,
+            "contact_style": 4.0,
+            "call_vs_text": 3.0,
+            "finance_interest": 2.0,
+            "commute_crowd_tolerance": 1.0,
+            "shopping_style": 5.0,
+            "cooking_vs_delivery": 4.0,
+            "video_consumption": 3.0,
+            "mobility_radius": 2.0,
+            "hotplace_preference": 1.0,
+        },
+    )
+    monkeypatch.setattr(
+        build_pair_dataset.rr,
+        "classify_user_type",
+        lambda _answers: {"type_key": "balanced_allrounder", "type_label": "균형", "dimensions": {}, "type_fit_score": 0.5},
+    )
+    monkeypatch.setattr(
+        build_pair_dataset.ml_utils,
+        "build_candidate_features",
+        lambda _answers, _profile_row, type_result=None: {
+            "district_name": "강남구",
+            "admin_dong_name": "역삼동",
+            "predicted_type_key": "balanced_allrounder",
+            "predicted_type_label": "균형",
+            "feature_a": 0.1,
+        },
+    )
+
+    rows = build_pair_dataset.read_log_rows_from_database()
+
+    assert len(rows) == 1
+    assert rows[0]["clicked"] == 1
+    assert str(rows[0]["admin_dong_code"]) == "1111111111"

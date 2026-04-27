@@ -6,3 +6,5 @@ httpx
 pytest
 numpy
 pandas
+sqlalchemy
+pymysql
