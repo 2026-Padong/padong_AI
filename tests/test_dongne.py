@@ -1,5 +1,7 @@
 import sqlite3
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from fastapi.testclient import TestClient
@@ -10,6 +12,7 @@ from app.db.session import get_engine
 from app.schemas.dongne import DongRecommendationResponse
 from app.services import dongne_service
 from scripts.recommendation import build_pair_dataset
+from scripts.recommendation import sync_backend_logs
 
 
 client = TestClient(app)
@@ -305,3 +308,78 @@ def test_build_pair_dataset_reads_logs_from_database(monkeypatch, tmp_path: Path
     assert len(rows) == 1
     assert rows[0]["clicked"] == 1
     assert str(rows[0]["admin_dong_code"]) == "1111111111"
+
+
+def test_sync_backend_logs_fetches_and_saves_interactions(monkeypatch, tmp_path: Path) -> None:
+    db_path = tmp_path / "sync_logs.db"
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setattr(settings, "BACKEND_LOG_SYNC_URL", "https://backend.example.com/api/v1/recommendation/logs")
+    monkeypatch.setattr(settings, "BACKEND_LOG_SYNC_TOKEN", "secret-token")
+    monkeypatch.setattr(settings, "BACKEND_LOG_SYNC_TIMEOUT_SEC", 5.0)
+
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "interactions": [
+                    {
+                        "user_id": "user-9",
+                        "session_id": "session-9",
+                        "admin_dong_code": 1111111111,
+                        "clicked": 1,
+                        "liked": 1,
+                        "dwell_time_sec": 19.5,
+                        "impression": 1,
+                        "rank_position": 1,
+                        "event_at": "2026-04-27T23:10:00+09:00",
+                    }
+                ]
+            }
+
+    class DummyClient:
+        def __init__(self, timeout: float) -> None:
+            captured["timeout"] = timeout
+
+        def __enter__(self) -> "DummyClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def get(self, url: str, params: dict[str, str], headers: dict[str, str]) -> DummyResponse:
+            captured["url"] = url
+            captured["params"] = params
+            captured["headers"] = headers
+            return DummyResponse()
+
+    monkeypatch.setattr(sync_backend_logs.httpx, "Client", DummyClient)
+
+    result = sync_backend_logs.sync_backend_interactions(
+        reference_time=datetime(2026, 4, 28, 4, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+    )
+
+    assert result["requested"] is True
+    assert result["sync_date"] == "2026-04-27"
+    assert result["fetched_count"] == 1
+    assert result["updated_count"] == 1
+    assert captured["url"] == "https://backend.example.com/api/v1/recommendation/logs"
+    assert captured["headers"] == {"Authorization": "Bearer secret-token"}
+    assert captured["params"] == {
+        "date": "2026-04-27",
+        "from": "2026-04-27T00:00:00+09:00",
+        "to": "2026-04-28T00:00:00+09:00",
+    }
+
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, session_id, admin_dong_code, clicked, liked, dwell_time_sec
+            FROM user_recommendation_logs
+            """
+        ).fetchone()
+
+    assert row == ("user-9", "session-9", "1111111111", "1", "1", "19.5")

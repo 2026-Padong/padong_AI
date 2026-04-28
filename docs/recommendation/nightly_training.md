@@ -9,9 +9,74 @@
 
 `run_nightly_training.py`는 아래 순서로 실행됩니다.
 
-1. `user_recommendation_logs`를 DB에서 읽어 pair dataset 생성
-2. pair dataset으로 LightGBM 재학습
-3. 학습 산출물을 `artifacts/dongne/`에 저장
+1. 백엔드 로그 API에 전날 사용자 반응 로그를 요청
+2. 응답으로 받은 `interactions`를 `user_recommendation_logs`에 upsert
+3. `user_recommendation_logs`를 DB에서 읽어 pair dataset 생성
+4. pair dataset으로 LightGBM 재학습
+5. 학습 산출물을 `artifacts/dongne/`에 저장
+
+## 백엔드 로그 연동 환경변수
+
+새벽 배치에서 백엔드 로그를 pull 하려면 아래 환경변수를 주입합니다.
+
+```text
+BACKEND_LOG_SYNC_URL=https://backend.example.com/api/v1/recommendation/logs
+BACKEND_LOG_SYNC_TOKEN=your-secret-token
+BACKEND_LOG_SYNC_TIMEOUT_SEC=30
+```
+
+- `BACKEND_LOG_SYNC_URL`
+  - 새벽 배치가 호출할 백엔드 로그 조회 API 주소
+- `BACKEND_LOG_SYNC_TOKEN`
+  - 필요할 때 Bearer 토큰으로 전달
+- `BACKEND_LOG_SYNC_TIMEOUT_SEC`
+  - 요청 타임아웃 초
+
+배치는 아래 쿼리 파라미터를 붙여서 `GET` 요청합니다.
+
+```text
+date=2026-04-27
+from=2026-04-27T00:00:00+09:00
+to=2026-04-28T00:00:00+09:00
+```
+
+응답은 아래 둘 중 하나 형태면 됩니다.
+
+```json
+{
+  "interactions": [
+    {
+      "user_id": "user-1",
+      "session_id": "session-1",
+      "admin_dong_code": 1144066000,
+      "clicked": 1,
+      "liked": 0,
+      "dwell_time_sec": 42.5,
+      "impression": 1,
+      "rank_position": 1,
+      "event_at": "2026-04-27T10:35:00+09:00"
+    }
+  ]
+}
+```
+
+또는
+
+```json
+[
+  {
+    "user_id": "user-1",
+    "session_id": "session-1",
+    "admin_dong_code": 1144066000,
+    "clicked": 1,
+    "liked": 0,
+    "dwell_time_sec": 42.5,
+    "impression": 1,
+    "rank_position": 1,
+    "event_at": "2026-04-27T10:35:00+09:00"
+  }
+]
+```
 
 ## Cron 등록 예시
 

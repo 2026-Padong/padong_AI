@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     DB_NAME: str | None = None
     DB_USER: str | None = None
     DB_PASSWORD: str | None = None
+    BACKEND_LOG_SYNC_URL: str | None = None
+    BACKEND_LOG_SYNC_TOKEN: str | None = None
+    BACKEND_LOG_SYNC_TIMEOUT_SEC: float = 30.0
 
     model_config = SettingsConfigDict(
         extra="ignore",
