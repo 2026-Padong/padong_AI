@@ -24,7 +24,7 @@ IDENTIFIER_COLUMNS = {
 
 
 def load_profile_rows() -> List[Dict[str, object]]:
-    raw_rows = rr.load_rows(rr.SOURCE_CSV)
+    raw_rows = rr.load_source_rows()
     return rr.normalize_profiles(rr.build_profile_rows(raw_rows))
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +20,44 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "new_integrated_admin_dong_data.csv"
 LEGACY_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "integrated_admin_dong_data.csv"
 SOURCE_CSV = DEFAULT_SOURCE_CSV if DEFAULT_SOURCE_CSV.exists() else LEGACY_SOURCE_CSV
+SOURCE_TABLE = "new_integrated_admin_dong_data"
+SOURCE_COLUMNS = [
+    "admin_dong_code",
+    "district_name",
+    "admin_dong_name",
+    "population__total_population",
+    "interest__총인구",
+    "interest__1인가구수",
+    "interest__커뮤니케이션이 적은 집단",
+    "interest__평일 외출이 적은 집단",
+    "interest__휴일 외출이 적은 집단",
+    "interest__외출이 매우 적은 집단(전체)",
+    "interest__동영상서비스 이용이 많은 집단",
+    "interest__재정상태에 대한 관심집단",
+    "interest__외출-커뮤니케이션이 모두 적은 집단(전체)",
+    "telecom__총인구수",
+    "telecom__평일 총 이동 횟수",
+    "telecom__휴일 총 이동 횟수 평균",
+    "telecom__집 추정 위치 휴일 총 체류시간",
+    "telecom__평균 통화대상자 수",
+    "telecom__평균 문자대상자 수",
+    "telecom__평균 통화량",
+    "telecom__평균 문자량",
+    "telecom__금융 서비스 사용일수",
+    "telecom__지하철이동일수 합계",
+    "telecom__쇼핑 서비스 사용일수",
+    "telecom__배달 서비스 사용일수",
+    "telecom__동영상/방송 서비스 사용일수",
+    "telecom__주간상주지 변경횟수 평균",
+    "telecom__야간상주지 변경횟수 평균",
+    "telecom__평일 총 이동 거리 합계",
+    "telecom__휴일 총 이동 거리 합계",
+    "subway__subway_commute_congestion_avg",
+    "commerce__overall__점포_수",
+    "commerce__외식/카페__점포_수",
+    "commerce__소매/유통__점포_수",
+    "commerce__여가/오락/숙박__점포_수",
+]
 PROFILE_CSV = DONGNE_PROCESSED_DATA_DIR / "admin_dong_lifestyle_profiles.csv"
 SAMPLE_RESULT_JSON = DONGNE_ARTIFACT_DIR / "sample_recommendations.json"
 
@@ -216,6 +253,46 @@ def load_rows(path: Path) -> List[Dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def _default_database_url() -> str | None:
+    try:
+        from app.core.config import settings
+    except Exception:
+        return None
+    return settings.DATABASE_URL
+
+
+def load_rows_from_database(
+    table_name: str = SOURCE_TABLE,
+    database_url: str | None = None,
+) -> List[Dict[str, str]]:
+    database_url = database_url or _default_database_url()
+    if not database_url:
+        return []
+
+    from sqlalchemy import create_engine
+    from sqlalchemy import inspect
+    from sqlalchemy import text
+
+    engine = create_engine(database_url, future=True)
+    if not inspect(engine).has_table(table_name):
+        return []
+
+    with engine.begin() as connection:
+        rows = connection.execute(text(f"SELECT * FROM {table_name}")).mappings().all()
+
+    return [
+        {str(key): "" if value is None else str(value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def load_source_rows(database_url: str | None = None) -> List[Dict[str, str]]:
+    db_rows = load_rows_from_database(database_url=database_url)
+    if db_rows:
+        return db_rows
+    return load_rows(SOURCE_CSV)
+
+
 def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -259,7 +336,7 @@ def blend_explicit_and_behavior_answers(
 def build_profile_rows(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
     profile_rows: List[Dict[str, object]] = []
     for row in rows:
-        population = parse_number(row.get("population__total"))
+        population = parse_number(row.get("population__total_population", row.get("population__total")))
         interest_population = parse_number(row.get("interest__총인구")) or population
         telecom_population = parse_number(row.get("telecom__총인구수")) or population
         call_targets = parse_number(row.get("telecom__평균 통화대상자 수"))
@@ -293,13 +370,13 @@ def build_profile_rows(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
             "video_service_days": parse_number(row.get("telecom__동영상/방송 서비스 사용일수")),
             "shopping_service_days": parse_number(row.get("telecom__쇼핑 서비스 사용일수")),
             "delivery_service_days": parse_number(row.get("telecom__배달 서비스 사용일수")),
-            "commute_congestion_avg": parse_number(row.get("subway__commute_congestion_avg")),
+            "commute_congestion_avg": parse_number(row.get("subway__subway_commute_congestion_avg", row.get("subway__commute_congestion_avg"))),
             "subway_use_days": parse_number(row.get("telecom__지하철이동일수 합계")),
-            "store_count_total": parse_number(row.get("commerce__total__store_count")),
-            "store_count_food": parse_number(row.get("commerce__외식/카페__store_count")),
-            "store_count_leisure": parse_number(row.get("commerce__여가/오락/숙박__store_count")),
-            "store_count_life": parse_number(row.get("commerce__생활서비스__store_count")),
-            "store_count_retail": parse_number(row.get("commerce__소매/유통__store_count")),
+            "store_count_total": parse_number(row.get("commerce__overall__점포_수", row.get("commerce__total__store_count"))),
+            "store_count_food": parse_number(row.get("commerce__외식/카페__점포_수", row.get("commerce__외식/카페__store_count"))),
+            "store_count_leisure": parse_number(row.get("commerce__여가/오락/숙박__점포_수", row.get("commerce__여가/오락/숙박__store_count"))),
+            "store_count_life": parse_number(row.get("commerce__생활서비스__점포_수", row.get("commerce__생활서비스__store_count"))),
+            "store_count_retail": parse_number(row.get("commerce__소매/유통__점포_수", row.get("commerce__소매/유통__store_count"))),
             "telecom_population_total": telecom_population,
         }
 
@@ -724,7 +801,7 @@ def main() -> None:
     parser.add_argument("--write-samples", action="store_true", help="Write sample recommendation outputs to JSON.")
     args = parser.parse_args()
 
-    raw_rows = load_rows(SOURCE_CSV)
+    raw_rows = load_source_rows()
     profile_rows = normalize_profiles(build_profile_rows(raw_rows))
     build_profile_csv(profile_rows)
 

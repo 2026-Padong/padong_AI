@@ -41,6 +41,7 @@ QUESTION_ORDER = list(QUESTION_TEXT.keys())
 DEFAULT_DATA_DIR = DONGNE_RAW_DATA_DIR
 DONG_PROFILE_TABLE = "dong_region_profiles"
 RECOMMENDATION_LOG_TABLE = "user_recommendation_logs"
+INTEGRATED_ADMIN_DONG_TABLE = rr.SOURCE_TABLE
 
 
 @dataclass(frozen=True)
@@ -313,17 +314,7 @@ def build_user_vector(responses: Mapping[str, float]) -> dict[str, float | dict[
     }
 
 
-def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
-    base = Path(base_dir)
-    csv_paths = sorted(base.glob("*.csv"), key=lambda path: path.stat().st_size)
-    if len(csv_paths) < 3:
-        raise FileNotFoundError("추천에 필요한 CSV 3개를 찾지 못했습니다.")
-
-    _, interest_path, telecom_path = csv_paths[:3]
-
-    interest = pd.read_csv(interest_path, encoding="utf-8-sig")
-    telecom = pd.read_csv(telecom_path, encoding="utf-8-sig")
-
+def _build_region_profiles_from_frames(interest: pd.DataFrame, telecom: pd.DataFrame) -> dict[str, pd.DataFrame]:
     interest = interest.loc[:, [col for col in interest.columns if str(col).strip() and not str(col).startswith("Unnamed:")]].copy()
     telecom = telecom.loc[:, [col for col in telecom.columns if str(col).strip() and not str(col).startswith("Unnamed:")]].copy()
     interest = interest.rename(
@@ -504,10 +495,50 @@ def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
     return {"dong": dong}
 
 
+def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
+    base = Path(base_dir)
+    csv_paths = sorted(base.glob("*.csv"), key=lambda path: path.stat().st_size)
+    if len(csv_paths) < 3:
+        raise FileNotFoundError("추천에 필요한 CSV 3개를 찾지 못했습니다.")
+
+    _, interest_path, telecom_path = csv_paths[:3]
+
+    interest = pd.read_csv(interest_path, encoding="utf-8-sig")
+    telecom = pd.read_csv(telecom_path, encoding="utf-8-sig")
+    return _build_region_profiles_from_frames(interest, telecom)
+
+
+def _source_frame_from_integrated_data(source: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    id_columns = {
+        "admin_dong_code": "행정동코드",
+        "district_name": "자치구",
+        "admin_dong_name": "행정동명",
+    }
+    frame = source.loc[:, list(id_columns)].rename(columns=id_columns).copy()
+    prefixed_columns = [column for column in source.columns if column.startswith(prefix)]
+    for column in prefixed_columns:
+        frame[column.removeprefix(prefix)] = source[column]
+    return frame
+
+
+def _build_region_profiles_from_integrated_database(engine: Engine) -> dict[str, pd.DataFrame] | None:
+    if not _table_has_rows(engine, INTEGRATED_ADMIN_DONG_TABLE):
+        return None
+
+    source = pd.read_sql_table(INTEGRATED_ADMIN_DONG_TABLE, con=engine)
+    interest = _source_frame_from_integrated_data(source, "interest__")
+    telecom = _source_frame_from_integrated_data(source, "telecom__")
+    return _build_region_profiles_from_frames(interest, telecom)
+
+
 @lru_cache(maxsize=8)
 def load_region_profiles(base_dir: str, database_url: str) -> dict[str, pd.DataFrame]:
     engine = get_engine(database_url)
     if not _table_has_rows(engine, DONG_PROFILE_TABLE):
+        profiles = _build_region_profiles_from_integrated_database(engine)
+        if profiles is not None:
+            _store_region_profiles(engine, profiles)
+            return profiles
         profiles = _build_region_profiles_from_csv(base_dir)
         _store_region_profiles(engine, profiles)
         return profiles

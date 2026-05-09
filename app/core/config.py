@@ -1,9 +1,39 @@
+import json
 from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 from pydantic import field_validator
 from pydantic import Field
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LAUNCH_JSON_PATH = PROJECT_ROOT / ".vscode" / "launch.json"
+
+
+@lru_cache
+def load_vscode_launch_env() -> dict[str, str]:
+    if not LAUNCH_JSON_PATH.exists():
+        return {}
+
+    try:
+        payload = json.loads(LAUNCH_JSON_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    configurations = payload.get("configurations", [])
+    if not isinstance(configurations, list):
+        return {}
+
+    for configuration in configurations:
+        if not isinstance(configuration, dict):
+            continue
+        env = configuration.get("env")
+        if isinstance(env, dict):
+            return {str(key): str(value) for key, value in env.items() if value is not None}
+    return {}
 
 
 class Settings(BaseSettings):
@@ -44,6 +74,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
+        launch_env = load_vscode_launch_env()
+        for key in ("DB_DRIVER", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"):
+            if getattr(self, key) in {None, ""} and key in launch_env:
+                value: Any = launch_env[key]
+                if key == "DB_PORT":
+                    value = int(value)
+                setattr(self, key, value)
+
         if self.DATABASE_URL:
             return self
 
