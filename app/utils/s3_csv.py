@@ -23,6 +23,10 @@ S3_CSV_PREFIX = DONGNE_S3_PREFIX
 S3_CSV_ENABLED = os.getenv("DONGNE_S3_ENABLED", "true").lower() not in {"0", "false", "no"}
 
 
+class S3CsvReadError(RuntimeError):
+    pass
+
+
 @lru_cache(maxsize=1)
 def _get_boto3_client():
     if not S3_CSV_ENABLED:
@@ -45,6 +49,10 @@ def csv_basename(path: str | Path) -> str:
     if parsed.scheme == "s3":
         return Path(parsed.path).name
     return Path(path).name
+
+
+def _is_s3_path(path: str | Path) -> bool:
+    return urlparse(str(path)).scheme == "s3"
 
 
 def _normalized_text(value: str) -> str:
@@ -86,12 +94,18 @@ def _local_fallback_path(path: str | Path) -> Path:
 def _read_s3_bytes(path: str | Path) -> bytes | None:
     client = _get_boto3_client()
     if client is None:
+        if _is_s3_path(path):
+            raise S3CsvReadError(
+                "S3 CSV를 읽으려면 boto3가 필요합니다. 현재 실행 환경에 boto3를 설치해 주세요."
+            )
         return None
 
     bucket, key = _s3_location_for(path)
     try:
         response = client.get_object(Bucket=bucket, Key=key)
-    except Exception:
+    except Exception as exc:
+        if _is_s3_path(path):
+            raise S3CsvReadError(f"S3 CSV 읽기 실패: bucket={bucket}, key={key}, error={exc}") from exc
         return None
 
     return response["Body"].read()
@@ -148,14 +162,26 @@ def find_csv_path(base_dir: str | Path, marker: str, *, exclude_new: bool = Fals
 
 
 def read_csv_dataframe(path: str | Path, **kwargs) -> pd.DataFrame:
-    data = _read_s3_bytes(path)
+    try:
+        data = _read_s3_bytes(path)
+    except S3CsvReadError:
+        fallback_path = _local_fallback_path(path)
+        if not fallback_path.exists():
+            raise
+        data = None
     if data is not None:
         return pd.read_csv(BytesIO(data), **kwargs)
     return pd.read_csv(_local_fallback_path(path), **kwargs)
 
 
 def read_csv_dict_rows(path: str | Path, *, encoding: str = "utf-8-sig") -> list[dict[str, str]]:
-    data = _read_s3_bytes(path)
+    try:
+        data = _read_s3_bytes(path)
+    except S3CsvReadError:
+        fallback_path = _local_fallback_path(path)
+        if not fallback_path.exists():
+            raise
+        data = None
     if data is not None:
         text = data.decode(encoding)
         return list(csv.DictReader(StringIO(text)))
@@ -166,7 +192,13 @@ def read_csv_dict_rows(path: str | Path, *, encoding: str = "utf-8-sig") -> list
 
 @contextmanager
 def open_csv_text(path: str | Path, *, encoding: str = "utf-8-sig") -> Iterator[StringIO | TextIO]:
-    data = _read_s3_bytes(path)
+    try:
+        data = _read_s3_bytes(path)
+    except S3CsvReadError:
+        fallback_path = _local_fallback_path(path)
+        if not fallback_path.exists():
+            raise
+        data = None
     if data is not None:
         yield StringIO(data.decode(encoding))
         return
