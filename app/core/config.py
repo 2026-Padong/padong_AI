@@ -51,8 +51,10 @@ class Settings(BaseSettings):
     BACKEND_LOG_SYNC_TIMEOUT_SEC: float = 30.0
 
     model_config = SettingsConfigDict(
-        extra="ignore",
-    )
+    env_file=".env",
+    env_file_encoding="utf-8",
+    extra="ignore",
+)
 
     @field_validator("DEBUG", mode="before")
     @classmethod
