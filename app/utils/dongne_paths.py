@@ -1,4 +1,5 @@
 import os
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,7 +27,7 @@ DONGNE_S3_DATA_DIR = f"s3://{DONGNE_S3_BUCKET}/{DONGNE_S3_PREFIX}" if DONGNE_S3_
 
 
 def dongne_s3_csv_path(filename: str) -> str:
-    return f"{DONGNE_S3_DATA_DIR}/{filename}"
+    return f"{DONGNE_S3_DATA_DIR}/{unicodedata.normalize('NFD', filename)}"
 
 
 DONGNE_INTEREST_CSV = dongne_s3_csv_path("2025.12월_10개_관심집단수.csv")
