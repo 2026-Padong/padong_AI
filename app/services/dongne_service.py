@@ -18,7 +18,7 @@ from app.schemas.dongne import DongneInteractionBatchRequest
 from app.schemas.dongne import DongneInteractionBatchResponse
 from app.schemas.dongne import DongRecommendationResponse
 from app.schemas.dongne import DongneRecommendationRequest
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation import recommendation_ml_utils as ml_utils
@@ -39,7 +39,7 @@ QUESTION_TEXT = {
 }
 
 QUESTION_ORDER = list(QUESTION_TEXT.keys())
-DEFAULT_DATA_DIR = DONGNE_RAW_DATA_DIR
+DEFAULT_DATA_DIR = DONGNE_S3_DATA_DIR
 DONG_PROFILE_TABLE = "dong_region_profiles"
 RECOMMENDATION_LOG_TABLE = "user_recommendation_logs"
 INTEGRATED_ADMIN_DONG_TABLE = rr.SOURCE_TABLE
@@ -499,9 +499,8 @@ def _build_region_profiles_from_frames(interest: pd.DataFrame, telecom: pd.DataF
 
 
 def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
-    base = Path(base_dir)
-    interest_path = find_csv_path(base, "관심집단수")
-    telecom_path = find_csv_path(base, "통신정보")
+    interest_path = find_csv_path(base_dir, "관심집단수")
+    telecom_path = find_csv_path(base_dir, "통신정보")
 
     interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
     telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")

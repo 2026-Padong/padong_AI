@@ -52,10 +52,12 @@ def main() -> None:
     parser.add_argument("--artifact-dir", default=str(DEFAULT_ARTIFACT_DIR), help="Output artifact directory.")
     args = parser.parse_args()
 
-    dataset_csv = Path(args.dataset_csv) if args.dataset_csv else None
+    dataset_csv: str | Path | None = args.dataset_csv if args.dataset_csv else None
     export_dataset_csv = Path(args.export_dataset_csv) if args.export_dataset_csv else None
     artifact_dir = Path(args.artifact_dir)
-    if dataset_csv is not None and not dataset_csv.is_absolute():
+    if dataset_csv is not None and not str(dataset_csv).startswith("s3://"):
+        dataset_csv = Path(dataset_csv)
+    if isinstance(dataset_csv, Path) and not dataset_csv.is_absolute():
         dataset_csv = PROJECT_ROOT / dataset_csv
     if export_dataset_csv is not None and not export_dataset_csv.is_absolute():
         export_dataset_csv = PROJECT_ROOT / export_dataset_csv

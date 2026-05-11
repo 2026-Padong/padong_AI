@@ -11,17 +11,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.dongne_paths import dongne_s3_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation.resident_recommender import SOURCE_COLUMNS
 from scripts.recommendation.resident_recommender import SOURCE_TABLE
 
 
-DEFAULT_INPUT_CSV = DONGNE_PROCESSED_DATA_DIR / "new_integrated_admin_dong_data.csv"
+DEFAULT_INPUT_CSV = dongne_s3_csv_path("new_integrated_admin_dong_data.csv")
 
 
 def import_csv_to_database(
-    csv_path: Path = DEFAULT_INPUT_CSV,
+    csv_path: str | Path = DEFAULT_INPUT_CSV,
     *,
     table_name: str = SOURCE_TABLE,
     if_exists: str = "replace",
@@ -59,8 +59,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    csv_path = Path(args.input_csv)
-    if not csv_path.is_absolute():
+    csv_path: str | Path = args.input_csv
+    if not str(csv_path).startswith("s3://"):
+        csv_path = Path(csv_path)
+    if isinstance(csv_path, Path) and not csv_path.is_absolute():
         csv_path = PROJECT_ROOT / csv_path
 
     row_count = import_csv_to_database(

@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 
 NOTEBOOK_OUTPUT_PATH = PROJECT_ROOT / "EDA" / "2025_12_3csv_dong_integrated_eda.ipynb"
 
@@ -48,7 +48,8 @@ PROJECT_ROOT = Path(r'""" + str(PROJECT_ROOT) + """')
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
+from app.utils.s3_csv import csv_basename
 from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 
@@ -68,14 +69,14 @@ rcParams["axes.unicode_minus"] = False
 """
     ),
     code(
-        """base_path = DONGNE_RAW_DATA_DIR
+        """base_path = DONGNE_S3_DATA_DIR
 pop_path = find_csv_path(base_path, "5세별_인구")
 interest_path = find_csv_path(base_path, "관심집단수")
 telecom_path = find_csv_path(base_path, "통신정보")
 
-print("공공 인구 파일:", pop_path.name)
-print("관심집단 파일:", interest_path.name)
-print("통신정보 파일:", telecom_path.name)
+print("공공 인구 파일:", csv_basename(pop_path))
+print("관심집단 파일:", csv_basename(interest_path))
+print("통신정보 파일:", csv_basename(telecom_path))
 """
     ),
     code(

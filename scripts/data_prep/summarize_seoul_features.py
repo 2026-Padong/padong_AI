@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 
@@ -20,7 +20,7 @@ def to_numeric_series(series):
     )
 
 
-base = DONGNE_RAW_DATA_DIR
+base = DONGNE_S3_DATA_DIR
 interest_path = find_csv_path(base, "관심집단수")
 telecom_path = find_csv_path(base, "통신정보")
 

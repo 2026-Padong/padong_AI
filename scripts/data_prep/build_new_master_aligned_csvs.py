@@ -11,14 +11,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import dongne_s3_csv_path
+from app.utils.s3_csv import csv_basename
 from app.utils.s3_csv import find_csv_path
-from app.utils.s3_csv import open_csv_text
 from app.utils.s3_csv import read_csv_dict_rows
+from app.utils.s3_csv import open_csv_text
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = DONGNE_RAW_DATA_DIR
+DATA_DIR = DONGNE_S3_DATA_DIR
 OUTPUT_DIR = DONGNE_PROCESSED_DATA_DIR
 FULLWIDTH_SPACE = "\u3000"
 
@@ -43,7 +45,7 @@ SPECIAL_SOURCE_TO_TARGETS: Dict[Tuple[str, str], List[Tuple[str, str]]] = {
 }
 
 
-def find_source_file(marker: str) -> Path:
+def find_source_file(marker: str) -> str | Path:
     return find_csv_path(DATA_DIR, marker, exclude_new=True)
 
 
@@ -52,7 +54,7 @@ TELECOM_FILE = find_source_file(MARKERS["telecom"])
 COMMERCE_FILE = find_source_file(MARKERS["commerce"])
 ADMIN_FILE = find_source_file(MARKERS["admin"])
 POPULATION_FILE = find_source_file(MARKERS["population"])
-SUBWAY_FILE = DATA_DIR / "subway.csv"
+SUBWAY_FILE = dongne_s3_csv_path("subway.csv")
 
 
 def clean_text(value: str | None) -> str:
@@ -90,11 +92,13 @@ def normalize_dong_name(name: str) -> str:
     return text
 
 
-def read_csv_rows(path: Path) -> List[Dict[str, str]]:
+def read_csv_rows(path: str | Path) -> List[Dict[str, str]]:
     return read_csv_dict_rows(path)
 
 
-def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
+def write_csv(path: str | Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -496,12 +500,12 @@ def main() -> None:
     )
 
     datasets = [
-        (ADMIN_FILE.name, new_admin_rows),
-        (POPULATION_FILE.name, new_population_rows),
-        (SUBWAY_FILE.name, new_subway_rows),
-        (INTEREST_FILE.name, new_interest_rows),
-        (TELECOM_FILE.name, new_telecom_rows),
-        (COMMERCE_FILE.name, new_commerce_rows),
+        (csv_basename(ADMIN_FILE), new_admin_rows),
+        (csv_basename(POPULATION_FILE), new_population_rows),
+        (csv_basename(SUBWAY_FILE), new_subway_rows),
+        (csv_basename(INTEREST_FILE), new_interest_rows),
+        (csv_basename(TELECOM_FILE), new_telecom_rows),
+        (csv_basename(COMMERCE_FILE), new_commerce_rows),
         ("integrated_admin_dong_data.csv", new_integrated_rows),
     ]
 

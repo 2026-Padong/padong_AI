@@ -31,7 +31,7 @@ def parse_float(value: str | None, default: float = 0.0) -> float:
     return float(text)
 
 
-def write_rows(path: Path, rows: List[Dict[str, object]]) -> None:
+def write_rows(path: str | Path, rows: List[Dict[str, object]]) -> None:
     import csv
 
     fieldnames: List[str] = []
@@ -42,6 +42,8 @@ def write_rows(path: Path, rows: List[Dict[str, object]]) -> None:
                 seen.add(key)
                 fieldnames.append(key)
 
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
@@ -127,7 +129,6 @@ def main() -> None:
     output_csv = Path(args.output_csv)
     if not output_csv.is_absolute():
         output_csv = PROJECT_ROOT / output_csv
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_rows, missing_codes = build_pair_rows(dwell_cap_sec=args.dwell_cap_sec)
 
     write_rows(output_csv, output_rows)

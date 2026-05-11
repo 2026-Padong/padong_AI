@@ -14,13 +14,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.dongne_paths import dongne_s3_csv_path
+from app.utils.s3_csv import csv_basename
 from app.utils.s3_csv import csv_source_exists
 from app.utils.s3_csv import read_csv_dict_rows
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "new_integrated_admin_dong_data.csv"
-LEGACY_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "integrated_admin_dong_data.csv"
+DEFAULT_SOURCE_CSV = dongne_s3_csv_path("new_integrated_admin_dong_data.csv")
+LEGACY_SOURCE_CSV = dongne_s3_csv_path("integrated_admin_dong_data.csv")
 SOURCE_CSV = DEFAULT_SOURCE_CSV if csv_source_exists(DEFAULT_SOURCE_CSV) else LEGACY_SOURCE_CSV
 SOURCE_TABLE = "new_integrated_admin_dong_data"
 SOURCE_COLUMNS = [
@@ -250,7 +252,7 @@ def ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator
 
 
-def load_rows(path: Path) -> List[Dict[str, str]]:
+def load_rows(path: str | Path) -> List[Dict[str, str]]:
     return read_csv_dict_rows(path)
 
 
@@ -294,7 +296,9 @@ def load_source_rows(database_url: str | None = None) -> List[Dict[str, str]]:
     return load_rows(SOURCE_CSV)
 
 
-def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
+def write_csv(path: str | Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -823,7 +827,7 @@ def main() -> None:
         SAMPLE_RESULT_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not args.answers:
-        print(f"profile_csv={PROFILE_CSV.name}")
+        print(f"profile_csv={csv_basename(PROFILE_CSV)}")
         if args.write_samples:
             print(f"sample_recommendations={SAMPLE_RESULT_JSON.name}")
         return
@@ -844,7 +848,7 @@ def main() -> None:
         "recommended_district_groups": grouped_recommendations,
         "primary_recommendation": primary_recommendation,
         "primary_recommendation_reasons": build_reason_lines(primary_recommendation) if primary_recommendation else [],
-        "profile_csv": PROFILE_CSV.name,
+        "profile_csv": csv_basename(PROFILE_CSV),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

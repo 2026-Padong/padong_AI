@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 
@@ -97,9 +97,8 @@ def build_user_vector(responses: Mapping[str, float]) -> Dict[str, float]:
 
 @lru_cache(maxsize=2)
 def load_region_profiles(base_dir: str) -> Dict[str, pd.DataFrame]:
-    base = Path(base_dir)
-    interest_path = find_csv_path(base, "관심집단수")
-    telecom_path = find_csv_path(base, "통신정보")
+    interest_path = find_csv_path(base_dir, "관심집단수")
+    telecom_path = find_csv_path(base_dir, "통신정보")
 
     interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
     telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
@@ -390,7 +389,7 @@ def build_dong_description(user_vector: Mapping[str, float], row: pd.Series) -> 
 
 def recommend_seoul_neighborhoods(
     responses: Mapping[str, float],
-    base_dir: str | Path = DONGNE_RAW_DATA_DIR,
+    base_dir: str | Path = DONGNE_S3_DATA_DIR,
     config: RecommenderConfig | None = None,
 ) -> Dict[str, Any]:
     config = config or RecommenderConfig()
@@ -472,7 +471,7 @@ if __name__ == "__main__":
         "q9": 5,
         "q10": 4,
     }
-    result = recommend_seoul_neighborhoods(sample_responses, base_dir=DONGNE_RAW_DATA_DIR)
+    result = recommend_seoul_neighborhoods(sample_responses, base_dir=DONGNE_S3_DATA_DIR)
     print(result["summary"])
     print("\n[구 추천]")
     for item in result["gu_recommendations"]:
