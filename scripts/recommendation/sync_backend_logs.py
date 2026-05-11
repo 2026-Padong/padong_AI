@@ -66,6 +66,9 @@ def sync_backend_interactions(reference_time: datetime | None = None) -> dict[st
         response.raise_for_status()
         interactions = _extract_interactions(response.json())
 
+    for interaction in interactions:
+        interaction.setdefault("created_at", window_start.date().isoformat())
+
     batch = DongneInteractionBatchRequest.model_validate({"interactions": interactions})
     result = save_interactions(batch)
     return {

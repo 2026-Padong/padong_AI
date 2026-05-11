@@ -50,9 +50,18 @@ def parse_answers_from_log_row(row: Mapping[str, str]) -> Dict[str, float]:
     return answers
 
 
-def compute_label(clicked: float, liked: float, dwell_time_sec: float, dwell_cap_sec: float = 120.0) -> float:
+def compute_label(
+    clicked_count: float,
+    liked_count: float,
+    dwell_time_sec: float,
+    dwell_cap_sec: float = 120.0,
+    click_cap: float = 5.0,
+    like_cap: float = 3.0,
+) -> float:
+    click_norm = max(0.0, min(float(clicked_count) / click_cap, 1.0))
+    like_norm = max(0.0, min(float(liked_count) / like_cap, 1.0))
     dwell_norm = max(0.0, min(float(dwell_time_sec) / dwell_cap_sec, 1.0))
-    return round((0.2 * float(clicked)) + (0.6 * float(liked)) + (0.2 * dwell_norm), 6)
+    return round((0.2 * click_norm) + (0.6 * like_norm) + (0.2 * dwell_norm), 6)
 
 
 def build_candidate_features(

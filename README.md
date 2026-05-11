@@ -85,5 +85,3 @@ pytest
 ## 주요 엔드포인트
 
 - `GET /api/v1/health`
-- `GET /api/v1/users/`
-- `POST /api/v1/users/`

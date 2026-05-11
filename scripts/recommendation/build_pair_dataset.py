@@ -53,17 +53,16 @@ def read_log_rows_from_database() -> List[Dict[str, object]]:
     query = f"""
     SELECT
         user_id,
-        session_id,
-        event_at,
+        created_at,
         admin_dong_code,
         rank_position,
-        impression,
-        clicked,
-        liked,
+        impression_count,
+        clicked_count,
+        liked_count,
         dwell_time_sec,
         q1, q2, q3, q4, q5, q6, q7, q8, q9, q10
     FROM {RECOMMENDATION_LOG_TABLE}
-    ORDER BY event_at, session_id, rank_position
+    ORDER BY created_at, user_id, rank_position
     """
     frame = pd.read_sql_query(query, con=get_engine(settings.DATABASE_URL))
     return frame.fillna("").to_dict(orient="records")
@@ -87,27 +86,26 @@ def build_pair_rows(dwell_cap_sec: float = 120.0) -> tuple[List[Dict[str, object
         type_result = rr.classify_user_type(answers)
         feature_row = ml_utils.build_candidate_features(answers, profile_row, type_result=type_result)
 
-        clicked = parse_float(log_row.get("clicked"))
-        liked = parse_float(log_row.get("liked"))
+        clicked_count = parse_float(log_row.get("clicked_count"))
+        liked_count = parse_float(log_row.get("liked_count"))
         dwell_time_sec = parse_float(log_row.get("dwell_time_sec"))
-        impression = parse_float(log_row.get("impression"), default=1.0)
+        impression_count = parse_float(log_row.get("impression_count"), default=1.0)
         rank_position = parse_float(log_row.get("rank_position"), default=0.0)
 
         pair_row: Dict[str, object] = {
             "user_id": log_row.get("user_id", ""),
-            "session_id": log_row.get("session_id", ""),
-            "event_at": log_row.get("event_at", "") or log_row.get("timestamp", ""),
+            "created_at": log_row.get("created_at", ""),
             "admin_dong_code": admin_dong_code,
             "district_name": feature_row["district_name"],
             "admin_dong_name": feature_row["admin_dong_name"],
             "predicted_type_key": feature_row["predicted_type_key"],
             "predicted_type_label": feature_row["predicted_type_label"],
-            "impression": impression,
+            "impression_count": impression_count,
             "rank_position": rank_position,
-            "clicked": clicked,
-            "liked": liked,
+            "clicked_count": clicked_count,
+            "liked_count": liked_count,
             "dwell_time_sec": dwell_time_sec,
-            "label": ml_utils.compute_label(clicked, liked, dwell_time_sec, dwell_cap_sec=dwell_cap_sec),
+            "label": ml_utils.compute_label(clicked_count, liked_count, dwell_time_sec, dwell_cap_sec=dwell_cap_sec),
         }
         pair_row.update(feature_row)
         output_rows.append(pair_row)

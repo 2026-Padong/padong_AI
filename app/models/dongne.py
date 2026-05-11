@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date
 from typing import Any
 
-from sqlalchemy import DateTime
+from sqlalchemy import Date
 from sqlalchemy import Float
+from sqlalchemy import BigInteger
 from sqlalchemy import Integer
 from sqlalchemy import JSON
 from sqlalchemy import String
-from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
@@ -30,14 +30,13 @@ class UserRecommendationLog(Base):
     __tablename__ = "user_recommendation_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    created_at: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     admin_dong_code: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     rank_position: Mapped[int] = mapped_column(Integer, nullable=False)
-    impression: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    clicked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    liked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    impression_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    clicked_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    liked_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dwell_time_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     q1: Mapped[int] = mapped_column(Integer, nullable=False)
     q2: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -49,4 +48,3 @@ class UserRecommendationLog(Base):
     q8: Mapped[int] = mapped_column(Integer, nullable=False)
     q9: Mapped[int] = mapped_column(Integer, nullable=False)
     q10: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

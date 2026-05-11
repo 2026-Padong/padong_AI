@@ -1,14 +1,10 @@
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
-from fastapi import status
 
-from app.schemas.dongne import DongneInteractionBatchRequest
-from app.schemas.dongne import DongneInteractionBatchResponse
 from app.schemas.dongne import DongRecommendationResponse
 from app.schemas.dongne import DongneRecommendationRequest
 from app.services import dongne_service
@@ -18,8 +14,6 @@ router = APIRouter()
 
 
 def get_recommendation_request(
-    user_id: Annotated[str, Query(min_length=1)],
-    session_id: Annotated[str, Query(min_length=1)],
     q1: Annotated[int, Query(ge=1, le=5)],
     q2: Annotated[int, Query(ge=1, le=5)],
     q3: Annotated[int, Query(ge=1, le=5)],
@@ -30,12 +24,10 @@ def get_recommendation_request(
     q8: Annotated[int, Query(ge=1, le=5)],
     q9: Annotated[int, Query(ge=1, le=5)],
     q10: Annotated[int, Query(ge=1, le=5)],
-    event_at: Annotated[datetime | None, Query()] = None,
+    user_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> DongneRecommendationRequest:
     return DongneRecommendationRequest(
         user_id=user_id,
-        session_id=session_id,
-        event_at=event_at,
         q1=q1,
         q2=q2,
         q3=q3,
@@ -59,11 +51,3 @@ def get_dong_recommendations(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@router.post("/interactions", response_model=DongneInteractionBatchResponse, status_code=status.HTTP_200_OK)
-def save_dongne_interactions(payload: DongneInteractionBatchRequest) -> DongneInteractionBatchResponse:
-    try:
-        return dongne_service.save_interactions(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc

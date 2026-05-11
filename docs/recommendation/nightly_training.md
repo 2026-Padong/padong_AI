@@ -46,15 +46,24 @@ to=2026-04-28T00:00:00+09:00
 {
   "interactions": [
     {
-      "user_id": "user-1",
-      "session_id": "session-1",
+      "user_id": 1,
+      "created_at": "2026-04-27",
       "admin_dong_code": 1144066000,
-      "clicked": 1,
-      "liked": 0,
+      "clicked_count": 1,
+      "liked_count": 0,
       "dwell_time_sec": 42.5,
-      "impression": 1,
+      "impression_count": 1,
       "rank_position": 1,
-      "event_at": "2026-04-27T10:35:00+09:00"
+      "q1": 5,
+      "q2": 4,
+      "q3": 3,
+      "q4": 2,
+      "q5": 1,
+      "q6": 5,
+      "q7": 4,
+      "q8": 3,
+      "q9": 2,
+      "q10": 1
     }
   ]
 }
@@ -65,15 +74,24 @@ to=2026-04-28T00:00:00+09:00
 ```json
 [
   {
-    "user_id": "user-1",
-    "session_id": "session-1",
+    "user_id": 1,
+    "created_at": "2026-04-27",
     "admin_dong_code": 1144066000,
-    "clicked": 1,
-    "liked": 0,
+    "clicked_count": 1,
+    "liked_count": 0,
     "dwell_time_sec": 42.5,
-    "impression": 1,
+    "impression_count": 1,
     "rank_position": 1,
-    "event_at": "2026-04-27T10:35:00+09:00"
+    "q1": 5,
+    "q2": 4,
+    "q3": 3,
+    "q4": 2,
+    "q5": 1,
+    "q6": 5,
+    "q7": 4,
+    "q8": 3,
+    "q9": 2,
+    "q10": 1
   }
 ]
 ```

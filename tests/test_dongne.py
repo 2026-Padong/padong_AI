@@ -23,6 +23,7 @@ def test_get_dong_recommendations(monkeypatch, tmp_path: Path) -> None:
     db_path = tmp_path / "test_recommendations.db"
 
     def fake_recommend_dongs(payload):
+        assert payload.user_id is None
         assert payload.q1 == 5
         assert payload.q10 == 1
         return expected
@@ -33,9 +34,6 @@ def test_get_dong_recommendations(monkeypatch, tmp_path: Path) -> None:
     response = client.get(
         "/api/v1/dongne/recommendations",
         params={
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "event_at": "2026-04-27T12:00:00+09:00",
             "q1": 5,
             "q2": 4,
             "q3": 3,
@@ -57,8 +55,6 @@ def test_get_dong_recommendations_validates_query_params() -> None:
     response = client.get(
         "/api/v1/dongne/recommendations",
         params={
-            "user_id": "user-1",
-            "session_id": "session-1",
             "q1": 0,
             "q2": 4,
             "q3": 3,
@@ -75,7 +71,7 @@ def test_get_dong_recommendations_validates_query_params() -> None:
     assert response.status_code == 422
 
 
-def test_recommend_dongs_saves_logs_to_database(monkeypatch, tmp_path: Path) -> None:
+def test_recommend_dongs_returns_recommendations_without_writing_logs(monkeypatch, tmp_path: Path) -> None:
     db_path = tmp_path / "padong_ai.db"
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
     dongne_service.load_region_profiles.cache_clear()
@@ -95,9 +91,6 @@ def test_recommend_dongs_saves_logs_to_database(monkeypatch, tmp_path: Path) -> 
     )
 
     payload = dongne_service.DongneRecommendationRequest(
-        user_id="user-77",
-        session_id="session-88",
-        event_at="2026-04-27T12:00:00+09:00",
         q1=5,
         q2=4,
         q3=3,
@@ -116,17 +109,11 @@ def test_recommend_dongs_saves_logs_to_database(monkeypatch, tmp_path: Path) -> 
     assert len(response.recommendations) == 3
 
     with sqlite3.connect(db_path) as connection:
-        rows = connection.execute(
-            """
-            SELECT user_id, session_id, admin_dong_code, rank_position, impression, clicked, liked, dwell_time_sec, q1, q10
-            FROM user_recommendation_logs
-            ORDER BY rank_position
-            """
+        tables = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_recommendation_logs'"
         ).fetchall()
 
-    assert len(rows) == 3
-    assert rows[0][:4] == ("user-77", "session-88", str(response.recommendations[0]), "1")
-    assert rows[0][4:] == ("1", "0", "0", "0.0", "5", "1")
+    assert tables == []
 
 
 def test_load_region_profiles_bootstraps_once_and_then_reads_db(monkeypatch, tmp_path: Path) -> None:
@@ -155,77 +142,24 @@ def test_load_region_profiles_bootstraps_once_and_then_reads_db(monkeypatch, tmp
     assert second["dong"].iloc[0]["자치구"] == "강남구"
 
 
-def test_save_interactions_endpoint_updates_rows(monkeypatch, tmp_path: Path) -> None:
-    db_path = tmp_path / "interaction.db"
-    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{db_path}")
-    dongne_service.load_region_profiles.cache_clear()
-
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            """
-            CREATE TABLE user_recommendation_logs (
-                user_id TEXT,
-                session_id TEXT,
-                event_at TEXT,
-                admin_dong_code INTEGER,
-                rank_position INTEGER,
-                impression INTEGER,
-                clicked INTEGER,
-                liked INTEGER,
-                dwell_time_sec REAL,
-                q1 INTEGER,
-                q2 INTEGER,
-                q3 INTEGER,
-                q4 INTEGER,
-                q5 INTEGER,
-                q6 INTEGER,
-                q7 INTEGER,
-                q8 INTEGER,
-                q9 INTEGER,
-                q10 INTEGER,
-                created_at TEXT
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO user_recommendation_logs
-            (user_id, session_id, event_at, admin_dong_code, rank_position, impression, clicked, liked, dwell_time_sec, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, created_at)
-            VALUES ('user-1', 'session-1', '2026-04-27T00:00:00+09:00', 1111111111, 1, 1, 0, 0, 0, 5, 4, 3, 2, 1, 5, 4, 3, 2, 1, '2026-04-27T00:00:00+09:00')
-            """
-        )
-        connection.commit()
-
+def test_save_interactions_endpoint_removed() -> None:
     response = client.post(
         "/api/v1/dongne/interactions",
         json={
             "interactions": [
                 {
-                    "user_id": "user-1",
-                    "session_id": "session-1",
+                    "user_id": 1,
                     "admin_dong_code": 1111111111,
-                    "clicked": 1,
-                    "liked": 1,
+                    "clicked_count": 1,
+                    "liked_count": 1,
                     "dwell_time_sec": 42.5,
-                    "impression": 1,
+                    "impression_count": 1,
                 }
             ]
         },
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"updated_count": 1}
-
-    with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            """
-            SELECT clicked, liked, dwell_time_sec
-            FROM user_recommendation_logs
-            WHERE user_id = 'user-1' AND session_id = 'session-1' AND admin_dong_code = 1111111111
-            """
-        ).fetchone()
-
-    assert row == (1, 1, 42.5)
+    assert response.status_code == 404
 
 
 def test_build_pair_dataset_reads_logs_from_database(monkeypatch, tmp_path: Path) -> None:
@@ -236,14 +170,13 @@ def test_build_pair_dataset_reads_logs_from_database(monkeypatch, tmp_path: Path
     log_frame = pd.DataFrame(
         [
             {
-                "user_id": "user-1",
-                "session_id": "session-1",
-                "event_at": "2026-04-27T00:00:00+09:00",
+                "user_id": 1,
+                "created_at": "2026-04-27",
                 "admin_dong_code": "1111111111",
                 "rank_position": 1,
-                "impression": 1,
-                "clicked": 1,
-                "liked": 0,
+                "impression_count": 2,
+                "clicked_count": 1,
+                "liked_count": 0,
                 "dwell_time_sec": 30.0,
                 "q1": 5,
                 "q2": 4,
@@ -306,7 +239,8 @@ def test_build_pair_dataset_reads_logs_from_database(monkeypatch, tmp_path: Path
     rows = build_pair_dataset.read_log_rows_from_database()
 
     assert len(rows) == 1
-    assert rows[0]["clicked"] == 1
+    assert str(rows[0]["created_at"]) == "2026-04-27"
+    assert rows[0]["clicked_count"] == 1
     assert str(rows[0]["admin_dong_code"]) == "1111111111"
 
 
@@ -327,15 +261,23 @@ def test_sync_backend_logs_fetches_and_saves_interactions(monkeypatch, tmp_path:
             return {
                 "interactions": [
                     {
-                        "user_id": "user-9",
-                        "session_id": "session-9",
+                        "user_id": 9,
                         "admin_dong_code": 1111111111,
-                        "clicked": 1,
-                        "liked": 1,
+                        "clicked_count": 2,
+                        "liked_count": 1,
                         "dwell_time_sec": 19.5,
-                        "impression": 1,
+                        "impression_count": 3,
                         "rank_position": 1,
-                        "event_at": "2026-04-27T23:10:00+09:00",
+                        "q1": 5,
+                        "q2": 4,
+                        "q3": 3,
+                        "q4": 2,
+                        "q5": 1,
+                        "q6": 5,
+                        "q7": 4,
+                        "q8": 3,
+                        "q9": 2,
+                        "q10": 1,
                     }
                 ]
             }
@@ -377,9 +319,9 @@ def test_sync_backend_logs_fetches_and_saves_interactions(monkeypatch, tmp_path:
     with sqlite3.connect(db_path) as connection:
         row = connection.execute(
             """
-            SELECT user_id, session_id, admin_dong_code, clicked, liked, dwell_time_sec
+            SELECT user_id, created_at, admin_dong_code, clicked_count, liked_count, impression_count, dwell_time_sec, q1, q10
             FROM user_recommendation_logs
             """
         ).fetchone()
 
-    assert row == ("user-9", "session-9", "1111111111", "1", "1", "19.5")
+    assert row == (9, "2026-04-27", 1111111111, 2, 1, 3, 19.5, 5, 1)

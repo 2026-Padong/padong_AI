@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from datetime import date
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -19,7 +19,6 @@ from app.schemas.dongne import DongneInteractionBatchResponse
 from app.schemas.dongne import DongRecommendationResponse
 from app.schemas.dongne import DongneRecommendationRequest
 from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
-from app.utils.common import utc_now
 from scripts.recommendation import recommendation_ml_utils as ml_utils
 from scripts.recommendation import resident_recommender as rr
 
@@ -46,7 +45,7 @@ INTEGRATED_ADMIN_DONG_TABLE = rr.SOURCE_TABLE
 
 @dataclass(frozen=True)
 class RecommenderConfig:
-    top_dong: int = 10
+    top_dong: int = 427
     min_population: int = 1000
 
 
@@ -69,7 +68,7 @@ def _normalize_loaded_profiles(frame: pd.DataFrame) -> pd.DataFrame:
     integer_columns = {"행정동코드", "총인구"}
     for column in normalized.columns:
         if column in integer_columns:
-            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").astype("Int64")
+            normalized[column] = _coerce_integer_series(normalized[column])
         elif normalized[column].dtype == object:
             numeric_series = pd.to_numeric(normalized[column], errors="coerce")
             if numeric_series.notna().all():
@@ -85,71 +84,38 @@ def _ensure_recommendation_log_table(engine: Engine) -> None:
     if inspect(engine).has_table(RECOMMENDATION_LOG_TABLE):
         return
 
-    empty_frame = pd.DataFrame(
-        columns=[
-            "user_id",
-            "session_id",
-            "event_at",
-            "admin_dong_code",
-            "rank_position",
-            "impression",
-            "clicked",
-            "liked",
-            "dwell_time_sec",
-            "q1",
-            "q2",
-            "q3",
-            "q4",
-            "q5",
-            "q6",
-            "q7",
-            "q8",
-            "q9",
-            "q10",
-            "created_at",
-        ]
-    )
-    empty_frame.to_sql(RECOMMENDATION_LOG_TABLE, con=engine, if_exists="append", index=False)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f"""
+                CREATE TABLE {RECOMMENDATION_LOG_TABLE} (
+                    user_id BIGINT NOT NULL,
+                    created_at DATE NOT NULL,
+                    admin_dong_code BIGINT NOT NULL,
+                    rank_position INTEGER NOT NULL,
+                    impression_count INTEGER NOT NULL,
+                    clicked_count INTEGER NOT NULL,
+                    liked_count INTEGER NOT NULL,
+                    dwell_time_sec FLOAT NOT NULL,
+                    q1 INTEGER NOT NULL,
+                    q2 INTEGER NOT NULL,
+                    q3 INTEGER NOT NULL,
+                    q4 INTEGER NOT NULL,
+                    q5 INTEGER NOT NULL,
+                    q6 INTEGER NOT NULL,
+                    q7 INTEGER NOT NULL,
+                    q8 INTEGER NOT NULL,
+                    q9 INTEGER NOT NULL,
+                    q10 INTEGER NOT NULL
+                )
+                """
+            )
+        )
 
 
 def _load_profiles_from_database(engine: Engine) -> dict[str, pd.DataFrame]:
     dong = pd.read_sql_table(DONG_PROFILE_TABLE, con=engine)
     return {"dong": _normalize_loaded_profiles(dong)}
-
-
-def _save_recommendation_logs(payload: DongneRecommendationRequest, recommendation_pks: list[int]) -> None:
-    engine = _get_engine()
-    _ensure_recommendation_log_table(engine)
-    event_at = payload.event_at or utc_now()
-    created_at = utc_now()
-    rows = [
-        {
-            "user_id": payload.user_id,
-            "session_id": payload.session_id,
-            "event_at": event_at.isoformat(),
-            "admin_dong_code": admin_dong_code,
-            "rank_position": rank_position,
-            "impression": 1,
-            "clicked": 0,
-            "liked": 0,
-            "dwell_time_sec": 0.0,
-            "q1": payload.q1,
-            "q2": payload.q2,
-            "q3": payload.q3,
-            "q4": payload.q4,
-            "q5": payload.q5,
-            "q6": payload.q6,
-            "q7": payload.q7,
-            "q8": payload.q8,
-            "q9": payload.q9,
-            "q10": payload.q10,
-            "created_at": created_at.isoformat(),
-        }
-        for rank_position, admin_dong_code in enumerate(recommendation_pks, start=1)
-    ]
-
-    if rows:
-        pd.DataFrame(rows).to_sql(RECOMMENDATION_LOG_TABLE, con=engine, if_exists="append", index=False)
 
 
 def save_interactions(payload: DongneInteractionBatchRequest) -> DongneInteractionBatchResponse:
@@ -159,20 +125,21 @@ def save_interactions(payload: DongneInteractionBatchRequest) -> DongneInteracti
 
     with engine.begin() as connection:
         for item in payload.interactions:
+            created_at = (item.created_at or date.today()).isoformat()
             row = connection.execute(
                 text(
                     f"""
                     SELECT 1
                     FROM {RECOMMENDATION_LOG_TABLE}
                     WHERE user_id = :user_id
-                      AND session_id = :session_id
+                      AND created_at = :created_at
                       AND admin_dong_code = :admin_dong_code
                     LIMIT 1
                     """
                 ),
                 {
                     "user_id": item.user_id,
-                    "session_id": item.session_id,
+                    "created_at": created_at,
                     "admin_dong_code": item.admin_dong_code,
                 },
             ).fetchone()
@@ -183,42 +150,46 @@ def save_interactions(payload: DongneInteractionBatchRequest) -> DongneInteracti
                         f"""
                         INSERT INTO {RECOMMENDATION_LOG_TABLE} (
                             user_id,
-                            session_id,
-                            event_at,
+                            created_at,
                             admin_dong_code,
                             rank_position,
-                            impression,
-                            clicked,
-                            liked,
+                            impression_count,
+                            clicked_count,
+                            liked_count,
                             dwell_time_sec,
-                            q1, q2, q3, q4, q5, q6, q7, q8, q9, q10,
-                            created_at
+                            q1, q2, q3, q4, q5, q6, q7, q8, q9, q10
                         ) VALUES (
                             :user_id,
-                            :session_id,
-                            :event_at,
+                            :created_at,
                             :admin_dong_code,
                             :rank_position,
-                            :impression,
-                            :clicked,
-                            :liked,
+                            :impression_count,
+                            :clicked_count,
+                            :liked_count,
                             :dwell_time_sec,
-                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            :created_at
+                            :q1, :q2, :q3, :q4, :q5, :q6, :q7, :q8, :q9, :q10
                         )
                         """
                     ),
                     {
                         "user_id": item.user_id,
-                        "session_id": item.session_id,
-                        "event_at": (item.event_at or utc_now()).isoformat(),
+                        "created_at": created_at,
                         "admin_dong_code": item.admin_dong_code,
                         "rank_position": item.rank_position or 1,
-                        "impression": item.impression,
-                        "clicked": item.clicked,
-                        "liked": item.liked,
+                        "impression_count": item.impression_count,
+                        "clicked_count": item.clicked_count,
+                        "liked_count": item.liked_count,
                         "dwell_time_sec": item.dwell_time_sec,
-                        "created_at": utc_now().isoformat(),
+                        "q1": item.q1,
+                        "q2": item.q2,
+                        "q3": item.q3,
+                        "q4": item.q4,
+                        "q5": item.q5,
+                        "q6": item.q6,
+                        "q7": item.q7,
+                        "q8": item.q8,
+                        "q9": item.q9,
+                        "q10": item.q10,
                     },
                 )
             else:
@@ -226,26 +197,44 @@ def save_interactions(payload: DongneInteractionBatchRequest) -> DongneInteracti
                     text(
                         f"""
                         UPDATE {RECOMMENDATION_LOG_TABLE}
-                        SET clicked = :clicked,
-                            liked = :liked,
+                        SET clicked_count = :clicked_count,
+                            liked_count = :liked_count,
                             dwell_time_sec = :dwell_time_sec,
-                            impression = :impression,
+                            impression_count = :impression_count,
                             rank_position = COALESCE(:rank_position, rank_position),
-                            event_at = COALESCE(:event_at, event_at)
+                            q1 = :q1,
+                            q2 = :q2,
+                            q3 = :q3,
+                            q4 = :q4,
+                            q5 = :q5,
+                            q6 = :q6,
+                            q7 = :q7,
+                            q8 = :q8,
+                            q9 = :q9,
+                            q10 = :q10
                         WHERE user_id = :user_id
-                          AND session_id = :session_id
+                          AND created_at = :created_at
                           AND admin_dong_code = :admin_dong_code
                         """
                     ),
                     {
-                        "clicked": item.clicked,
-                        "liked": item.liked,
+                        "clicked_count": item.clicked_count,
+                        "liked_count": item.liked_count,
                         "dwell_time_sec": item.dwell_time_sec,
-                        "impression": item.impression,
+                        "impression_count": item.impression_count,
                         "rank_position": item.rank_position,
-                        "event_at": item.event_at.isoformat() if item.event_at else None,
+                        "q1": item.q1,
+                        "q2": item.q2,
+                        "q3": item.q3,
+                        "q4": item.q4,
+                        "q5": item.q5,
+                        "q6": item.q6,
+                        "q7": item.q7,
+                        "q8": item.q8,
+                        "q9": item.q9,
+                        "q10": item.q10,
                         "user_id": item.user_id,
-                        "session_id": item.session_id,
+                        "created_at": created_at,
                         "admin_dong_code": item.admin_dong_code,
                     },
                 )
@@ -259,6 +248,18 @@ def _to_numeric_series(series: pd.Series) -> pd.Series:
         series.astype(str).str.replace(",", "", regex=False).str.strip().replace({"": np.nan, "nan": np.nan}),
         errors="coerce",
     )
+
+
+def _coerce_integer_series(series: pd.Series) -> pd.Series:
+    numeric = _to_numeric_series(series)
+    if numeric.dropna().empty:
+        return numeric.astype("Int64")
+
+    # CSV/DB round-trips sometimes turn integer-like columns into float64
+    # values such as 1111051500.0. Treat semantically-integer columns as
+    # integers by rounding before converting to pandas' nullable Int64 type.
+    rounded = numeric.round()
+    return rounded.astype("Int64")
 
 
 def _zscore(series: pd.Series) -> pd.Series:
@@ -624,7 +625,6 @@ def recommend_dongs(
     for _, dong_row in top_dongs.iterrows():
         recommendation_pks.append(int(dong_row["행정동코드"]))
 
-    _save_recommendation_logs(payload, recommendation_pks)
     return DongRecommendationResponse(
         user_type=str(type_result["type_label"]),
         recommendations=recommendation_pks,

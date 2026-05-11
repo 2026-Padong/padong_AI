@@ -27,18 +27,17 @@ DEFAULT_ARTIFACT_DIR = DONGNE_ARTIFACT_DIR
 
 NON_FEATURE_COLUMNS = {
     "user_id",
-    "session_id",
-    "event_at",
+    "created_at",
     "admin_dong_code",
     "admin_dong_code_10digit",
     "district_name",
     "admin_dong_name",
     "predicted_type_key",
     "predicted_type_label",
-    "impression",
+    "impression_count",
     "rank_position",
-    "clicked",
-    "liked",
+    "clicked_count",
+    "liked_count",
     "dwell_time_sec",
     "label",
 }
@@ -112,7 +111,6 @@ def main() -> None:
         "train_rows": int(len(X_train)),
         "test_rows": int(len(X_test)),
         "unique_users": int(frame["user_id"].nunique()) if "user_id" in frame.columns else 0,
-        "unique_sessions": int(frame["session_id"].nunique()) if "session_id" in frame.columns else 0,
         "label_mean": round(float(y.mean()), 6),
         "feature_count": int(len(feature_columns)),
     }
