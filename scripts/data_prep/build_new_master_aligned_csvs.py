@@ -11,8 +11,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.dongne_paths import DONGNE_INTEREST_CSV
+from app.utils.dongne_paths import DONGNE_POPULATION_CSV
+from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
+from app.utils.dongne_paths import DONGNE_TELECOM_CSV
 from app.utils.dongne_paths import dongne_s3_csv_path
 from app.utils.s3_csv import csv_basename
 from app.utils.s3_csv import find_csv_path
@@ -49,11 +52,11 @@ def find_source_file(marker: str) -> str | Path:
     return find_csv_path(DATA_DIR, marker, exclude_new=True)
 
 
-INTEREST_FILE = find_source_file(MARKERS["interest"])
-TELECOM_FILE = find_source_file(MARKERS["telecom"])
+INTEREST_FILE = DONGNE_INTEREST_CSV
+TELECOM_FILE = DONGNE_TELECOM_CSV
 COMMERCE_FILE = find_source_file(MARKERS["commerce"])
 ADMIN_FILE = find_source_file(MARKERS["admin"])
-POPULATION_FILE = find_source_file(MARKERS["population"])
+POPULATION_FILE = DONGNE_POPULATION_CSV
 SUBWAY_FILE = dongne_s3_csv_path("subway.csv")
 
 

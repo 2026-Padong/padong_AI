@@ -13,16 +13,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
+from app.utils.dongne_paths import DONGNE_INTEGRATED_CSV
+from app.utils.dongne_paths import DONGNE_LEGACY_INTEGRATED_CSV
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
-from app.utils.dongne_paths import dongne_s3_csv_path
 from app.utils.s3_csv import csv_basename
 from app.utils.s3_csv import csv_source_exists
 from app.utils.s3_csv import read_csv_dict_rows
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_SOURCE_CSV = dongne_s3_csv_path("new_integrated_admin_dong_data.csv")
-LEGACY_SOURCE_CSV = dongne_s3_csv_path("integrated_admin_dong_data.csv")
+DEFAULT_SOURCE_CSV = DONGNE_INTEGRATED_CSV
+LEGACY_SOURCE_CSV = DONGNE_LEGACY_INTEGRATED_CSV
 SOURCE_CSV = DEFAULT_SOURCE_CSV if csv_source_exists(DEFAULT_SOURCE_CSV) else LEGACY_SOURCE_CSV
 SOURCE_TABLE = "new_integrated_admin_dong_data"
 SOURCE_COLUMNS = [

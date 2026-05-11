@@ -14,7 +14,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.utils.dongne_paths import DONGNE_INTEREST_CSV
 from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
+from app.utils.dongne_paths import DONGNE_TELECOM_CSV
 from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 
@@ -97,8 +99,12 @@ def build_user_vector(responses: Mapping[str, float]) -> Dict[str, float]:
 
 @lru_cache(maxsize=2)
 def load_region_profiles(base_dir: str) -> Dict[str, pd.DataFrame]:
-    interest_path = find_csv_path(base_dir, "관심집단수")
-    telecom_path = find_csv_path(base_dir, "통신정보")
+    if base_dir == DONGNE_S3_DATA_DIR:
+        interest_path = DONGNE_INTEREST_CSV
+        telecom_path = DONGNE_TELECOM_CSV
+    else:
+        interest_path = find_csv_path(base_dir, "관심집단수")
+        telecom_path = find_csv_path(base_dir, "통신정보")
 
     interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
     telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")

@@ -48,9 +48,11 @@ PROJECT_ROOT = Path(r'""" + str(PROJECT_ROOT) + """')
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.utils.dongne_paths import DONGNE_INTEREST_CSV
+from app.utils.dongne_paths import DONGNE_POPULATION_CSV
 from app.utils.dongne_paths import DONGNE_S3_DATA_DIR
+from app.utils.dongne_paths import DONGNE_TELECOM_CSV
 from app.utils.s3_csv import csv_basename
-from app.utils.s3_csv import find_csv_path
 from app.utils.s3_csv import read_csv_dataframe
 
 warnings.filterwarnings("ignore")
@@ -70,9 +72,9 @@ rcParams["axes.unicode_minus"] = False
     ),
     code(
         """base_path = DONGNE_S3_DATA_DIR
-pop_path = find_csv_path(base_path, "5세별_인구")
-interest_path = find_csv_path(base_path, "관심집단수")
-telecom_path = find_csv_path(base_path, "통신정보")
+pop_path = DONGNE_POPULATION_CSV
+interest_path = DONGNE_INTEREST_CSV
+telecom_path = DONGNE_TELECOM_CSV
 
 print("공공 인구 파일:", csv_basename(pop_path))
 print("관심집단 파일:", csv_basename(interest_path))

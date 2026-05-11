@@ -11,13 +11,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.dongne_paths import dongne_s3_csv_path
+from app.utils.dongne_paths import DONGNE_INTEGRATED_CSV
 from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation.resident_recommender import SOURCE_COLUMNS
 from scripts.recommendation.resident_recommender import SOURCE_TABLE
 
 
-DEFAULT_INPUT_CSV = dongne_s3_csv_path("new_integrated_admin_dong_data.csv")
+DEFAULT_INPUT_CSV = DONGNE_INTEGRATED_CSV
 
 
 def import_csv_to_database(
