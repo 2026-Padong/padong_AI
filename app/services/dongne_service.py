@@ -501,7 +501,7 @@ def _build_region_profiles_from_frames(interest: pd.DataFrame, telecom: pd.DataF
 
 
 def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
-    if base_dir == DONGNE_S3_DATA_DIR:
+    if base_dir.rstrip("/") == DONGNE_S3_DATA_DIR:
         interest_path = DONGNE_INTEREST_CSV
         telecom_path = DONGNE_TELECOM_CSV
     else:
@@ -511,6 +511,13 @@ def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
     interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
     telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
     return _build_region_profiles_from_frames(interest, telecom)
+
+
+def _normalize_profile_base_dir(base_dir: str | Path) -> str:
+    text = str(base_dir)
+    if text.startswith("s3://"):
+        return text.rstrip("/")
+    return str(Path(text).resolve())
 
 
 def _source_frame_from_integrated_data(source: pd.DataFrame, prefix: str) -> pd.DataFrame:
@@ -616,7 +623,7 @@ def recommend_dongs(
     responses = payload.model_dump()
     user_vector = build_user_vector(responses)
     type_result = rr.classify_user_type(_build_type_answers(responses))
-    profiles = load_region_profiles(str(Path(base_dir).resolve()), settings.DATABASE_URL)
+    profiles = load_region_profiles(_normalize_profile_base_dir(base_dir), settings.DATABASE_URL)
 
     dong = profiles["dong"].copy()
     dong = dong[dong["총인구"] >= recommender_config.min_population].copy()
