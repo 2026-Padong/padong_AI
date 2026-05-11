@@ -19,6 +19,8 @@ from app.schemas.dongne import DongneInteractionBatchResponse
 from app.schemas.dongne import DongRecommendationResponse
 from app.schemas.dongne import DongneRecommendationRequest
 from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.s3_csv import find_csv_path
+from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation import recommendation_ml_utils as ml_utils
 from scripts.recommendation import resident_recommender as rr
 
@@ -498,14 +500,11 @@ def _build_region_profiles_from_frames(interest: pd.DataFrame, telecom: pd.DataF
 
 def _build_region_profiles_from_csv(base_dir: str) -> dict[str, pd.DataFrame]:
     base = Path(base_dir)
-    csv_paths = sorted(base.glob("*.csv"), key=lambda path: path.stat().st_size)
-    if len(csv_paths) < 3:
-        raise FileNotFoundError("추천에 필요한 CSV 3개를 찾지 못했습니다.")
+    interest_path = find_csv_path(base, "관심집단수")
+    telecom_path = find_csv_path(base, "통신정보")
 
-    _, interest_path, telecom_path = csv_paths[:3]
-
-    interest = pd.read_csv(interest_path, encoding="utf-8-sig")
-    telecom = pd.read_csv(telecom_path, encoding="utf-8-sig")
+    interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
+    telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
     return _build_region_profiles_from_frames(interest, telecom)
 
 

@@ -9,6 +9,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.s3_csv import find_csv_path
+from app.utils.s3_csv import read_csv_dataframe
 
 
 def to_numeric_series(series):
@@ -19,11 +21,11 @@ def to_numeric_series(series):
 
 
 base = DONGNE_RAW_DATA_DIR
-csv_paths = sorted(base.glob("*.csv"), key=lambda p: p.stat().st_size)
-pop_path, interest_path, telecom_path = csv_paths[0], csv_paths[1], csv_paths[2]
+interest_path = find_csv_path(base, "관심집단수")
+telecom_path = find_csv_path(base, "통신정보")
 
-interest = pd.read_csv(interest_path, encoding="utf-8-sig")
-telecom = pd.read_csv(telecom_path, encoding="utf-8-sig")
+interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
+telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
 
 interest = interest.loc[:, [c for c in interest.columns if str(c).strip() and not str(c).startswith("Unnamed:")]].copy()
 telecom = telecom.loc[:, [c for c in telecom.columns if str(c).strip() and not str(c).startswith("Unnamed:")]].copy()

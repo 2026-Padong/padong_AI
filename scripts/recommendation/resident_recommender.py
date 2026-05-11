@@ -14,12 +14,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.s3_csv import csv_source_exists
+from app.utils.s3_csv import read_csv_dict_rows
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "new_integrated_admin_dong_data.csv"
 LEGACY_SOURCE_CSV = DONGNE_PROCESSED_DATA_DIR / "integrated_admin_dong_data.csv"
-SOURCE_CSV = DEFAULT_SOURCE_CSV if DEFAULT_SOURCE_CSV.exists() else LEGACY_SOURCE_CSV
+SOURCE_CSV = DEFAULT_SOURCE_CSV if csv_source_exists(DEFAULT_SOURCE_CSV) else LEGACY_SOURCE_CSV
 SOURCE_TABLE = "new_integrated_admin_dong_data"
 SOURCE_COLUMNS = [
     "admin_dong_code",
@@ -249,8 +251,7 @@ def ratio(numerator: float, denominator: float) -> float:
 
 
 def load_rows(path: Path) -> List[Dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        return list(csv.DictReader(f))
+    return read_csv_dict_rows(path)
 
 
 def _default_database_url() -> str | None:

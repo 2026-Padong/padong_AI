@@ -15,6 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.s3_csv import find_csv_path
+from app.utils.s3_csv import read_csv_dataframe
 
 
 QUESTION_TEXT = {
@@ -96,14 +98,11 @@ def build_user_vector(responses: Mapping[str, float]) -> Dict[str, float]:
 @lru_cache(maxsize=2)
 def load_region_profiles(base_dir: str) -> Dict[str, pd.DataFrame]:
     base = Path(base_dir)
-    csv_paths = sorted(base.glob("*.csv"), key=lambda p: p.stat().st_size)
-    if len(csv_paths) < 3:
-        raise FileNotFoundError("추천에 필요한 CSV 3개를 찾지 못했습니다.")
+    interest_path = find_csv_path(base, "관심집단수")
+    telecom_path = find_csv_path(base, "통신정보")
 
-    _, interest_path, telecom_path = csv_paths[:3]
-
-    interest = pd.read_csv(interest_path, encoding="utf-8-sig")
-    telecom = pd.read_csv(telecom_path, encoding="utf-8-sig")
+    interest = read_csv_dataframe(interest_path, encoding="utf-8-sig")
+    telecom = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
 
     interest = interest.loc[:, [c for c in interest.columns if str(c).strip() and not str(c).startswith("Unnamed:")]].copy()
     telecom = telecom.loc[:, [c for c in telecom.columns if str(c).strip() and not str(c).startswith("Unnamed:")]].copy()

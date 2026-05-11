@@ -35,6 +35,7 @@ cells = [
     code(
         """from pathlib import Path
 import re
+import sys
 import warnings
 
 import numpy as np
@@ -42,6 +43,14 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import font_manager, rcParams
+
+PROJECT_ROOT = Path(r'""" + str(PROJECT_ROOT) + """')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.s3_csv import find_csv_path
+from app.utils.s3_csv import read_csv_dataframe
 
 warnings.filterwarnings("ignore")
 pd.set_option("display.max_columns", 200)
@@ -59,12 +68,10 @@ rcParams["axes.unicode_minus"] = False
 """
     ),
     code(
-        """base_path = Path(r'""" + str(DONGNE_RAW_DATA_DIR) + """')
-csv_paths = sorted(base_path.glob("*.csv"), key=lambda p: p.stat().st_size)
-
-pop_path = csv_paths[0]
-interest_path = csv_paths[1]
-telecom_path = csv_paths[2]
+        """base_path = DONGNE_RAW_DATA_DIR
+pop_path = find_csv_path(base_path, "5세별_인구")
+interest_path = find_csv_path(base_path, "관심집단수")
+telecom_path = find_csv_path(base_path, "통신정보")
 
 print("공공 인구 파일:", pop_path.name)
 print("관심집단 파일:", interest_path.name)
@@ -72,9 +79,9 @@ print("통신정보 파일:", telecom_path.name)
 """
     ),
     code(
-        """interest_raw = pd.read_csv(interest_path, encoding="utf-8-sig")
-telecom_raw = pd.read_csv(telecom_path, encoding="utf-8-sig")
-pop_raw = pd.read_csv(pop_path, encoding="utf-8-sig", header=None)
+        """interest_raw = read_csv_dataframe(interest_path, encoding="utf-8-sig")
+telecom_raw = read_csv_dataframe(telecom_path, encoding="utf-8-sig")
+pop_raw = read_csv_dataframe(pop_path, encoding="utf-8-sig", header=None)
 pop_raw.columns = ["지역", "항목", "값"]
 
 interest_raw = interest_raw.loc[:, [c for c in interest_raw.columns if str(c).strip() and not str(c).startswith("Unnamed:")]].copy()

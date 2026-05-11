@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 import sys
 
-import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy import Text
 
@@ -13,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation.resident_recommender import SOURCE_COLUMNS
 from scripts.recommendation.resident_recommender import SOURCE_TABLE
 
@@ -27,7 +27,7 @@ def import_csv_to_database(
     if_exists: str = "replace",
     database_url: str | None = None,
 ) -> int:
-    frame = pd.read_csv(csv_path, encoding="utf-8-sig", dtype=str, keep_default_na=False)
+    frame = read_csv_dataframe(csv_path, encoding="utf-8-sig", dtype=str, keep_default_na=False)
     missing_columns = [column for column in SOURCE_COLUMNS if column not in frame.columns]
     if missing_columns:
         raise ValueError(f"CSV에 필요한 컬럼이 없습니다: {missing_columns}")

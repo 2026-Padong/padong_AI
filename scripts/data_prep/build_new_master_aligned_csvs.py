@@ -13,6 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
 from app.utils.dongne_paths import DONGNE_RAW_DATA_DIR
+from app.utils.s3_csv import find_csv_path
+from app.utils.s3_csv import open_csv_text
+from app.utils.s3_csv import read_csv_dict_rows
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = DONGNE_RAW_DATA_DIR
@@ -41,10 +44,7 @@ SPECIAL_SOURCE_TO_TARGETS: Dict[Tuple[str, str], List[Tuple[str, str]]] = {
 
 
 def find_source_file(marker: str) -> Path:
-    for path in DATA_DIR.glob("*.csv"):
-        if marker in path.name and not path.name.startswith("new_"):
-            return path
-    raise FileNotFoundError(marker)
+    return find_csv_path(DATA_DIR, marker, exclude_new=True)
 
 
 INTEREST_FILE = find_source_file(MARKERS["interest"])
@@ -91,8 +91,7 @@ def normalize_dong_name(name: str) -> str:
 
 
 def read_csv_rows(path: Path) -> List[Dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        return list(csv.DictReader(f))
+    return read_csv_dict_rows(path)
 
 
 def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) -> None:
@@ -151,7 +150,7 @@ def match_targets(
 def build_population_output(admin_rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
     population_map: Dict[Tuple[str, str], Dict[str, object]] = {}
     current_district = ""
-    with POPULATION_FILE.open("r", encoding="utf-8-sig", newline="") as f:
+    with open_csv_text(POPULATION_FILE) as f:
         reader = csv.reader(f)
         for row in reader:
             if len(row) < 3:

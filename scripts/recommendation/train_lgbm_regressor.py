@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.utils.dongne_paths import DONGNE_ARTIFACT_DIR
 from app.utils.dongne_paths import DONGNE_PROCESSED_DATA_DIR
+from app.utils.s3_csv import read_csv_dataframe
 from scripts.recommendation import build_pair_dataset
 from scripts.recommendation import recommendation_ml_utils as ml_utils
 
@@ -63,7 +64,7 @@ def main() -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     if dataset_csv is not None:
-        frame = pd.read_csv(dataset_csv, encoding="utf-8-sig")
+        frame = read_csv_dataframe(dataset_csv, encoding="utf-8-sig")
         dataset_source = str(dataset_csv)
     else:
         frame = build_pair_dataset.build_pair_dataset_frame(dwell_cap_sec=args.dwell_cap_sec)
